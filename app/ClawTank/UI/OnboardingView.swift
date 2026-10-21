@@ -79,7 +79,8 @@ struct OnboardingView: View {
             Header(title: "You're Ready", symbol: "checkmark.seal")
             ConnectionDetails(server: server)
             Divider()
-            ConnectGuide(address: server.address, username: server.username)
+            ConnectGuide(address: server.address, username: server.username,
+                         remoteAddress: server.remote.remoteAddress)
         }
     }
 

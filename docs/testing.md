@@ -80,3 +80,8 @@ Live, 2026-10-21, loopback, `files_demo` (examples/files_demo.rs) acting as the 
 - Adaptive bitrate: policy unit tests, plus an end-to-end check that the client acks frames and latency is measured. [ ] Human: Wi-Fi session, then move away from the router; the menu should show "(congested)" and a lower target, then recover.
 - AVC444 measured, no-go (ADR-021): 4:2:0 colour error on small coloured text is 13.5/255 at 1× and 8.5 at 2×, independent of bit rate.
 - Multi-monitor deferred (ADR-019).
+
+## Phase 8 — remote access
+- Unit tests: `tailscale status --json` parsing (Running, NeedsLogin, Stopped, no MagicDNS, unreadable), detection fallbacks (CLI missing → interface scan → not installed), the 100.64/10 range, `pmset` womp parsing, and large CLI output not stalling.
+- Already covered by Rust security tests: 100.64/10 and ULA accepted; public addresses rejected by default.
+- [ ] Human: install Tailscale on the Mac and on a phone or laptop. Turn off the client's Wi-Fi (use cellular), connect to the `*.ts.net` name shown in Settings → Remote Access, and confirm a session works.

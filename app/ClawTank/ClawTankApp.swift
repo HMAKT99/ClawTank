@@ -86,6 +86,11 @@ struct StatusMenu: View {
         }
         Divider()
         Button("Copy Address (\(server.address))") { server.copyAddress() }
+        if let remote = server.remote.remoteAddress {
+            Button("Copy Remote Address (\(remote))") { server.copyRemoteAddress() }
+        } else {
+            Button("Set Up Remote Access…") { model.windows.show(.settings) }
+        }
         Button("Copy Password") { server.copyPassword() }.disabled(!server.isRunning)
         if server.isRunning {
             Button("Stop Sharing") { server.stop() }

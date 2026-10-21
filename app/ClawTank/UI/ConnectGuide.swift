@@ -5,9 +5,11 @@ import SwiftUI
 struct ConnectGuide: View {
     let address: String
     let username: String
+    /// Tailscale name/IP, if this Mac is on a tailnet.
+    var remoteAddress: String?
 
     enum Platform: String, CaseIterable, Identifiable {
-        case windows = "Windows", mac = "Mac", mobile = "iPad / iPhone", linux = "Linux"
+        case windows = "Windows", mac = "Mac", mobile = "iPad / iPhone", linux = "Linux", away = "From anywhere"
         var id: String { rawValue }
     }
 
@@ -55,6 +57,21 @@ struct ConnectGuide: View {
             xfreerdp3 /v:\(address) /u:\(username) /dynamic-resolution /gfx:avc420
             Or add an RDP connection in Remmina with the same address and username.
             """
+        case .away:
+            if let remoteAddress {
+                """
+                This Mac is on Tailscale. On the other device, install Tailscale, sign in to the same \
+                account, then use \(remoteAddress) as the PC name (same username and password). \
+                Nothing is opened to the internet: the connection travels inside Tailscale's encrypted network.
+                """
+            } else {
+                """
+                To connect from outside your home or office, install Tailscale (free for personal use) on \
+                this Mac and on the device you connect from, and sign in to the same account on both. \
+                Then use this Mac's Tailscale name as the PC name. See Settings → Remote Access. \
+                Don't forward port 3389 on your router.
+                """
+            }
         }
     }
 }

@@ -43,6 +43,9 @@ final class ServerController: ObservableObject {
     @Published private(set) var videoStatus: String?
     /// e.g. "Virtual display 1512×982" while streaming.
     @Published private(set) var displayDescription: String?
+    /// Tailscale status: how (and whether) this Mac can be reached from outside the LAN.
+    @Published private(set) var remote: TailscaleState = .notInstalled
+    @Published private(set) var wakeForNetwork: Bool?
     /// File transfer progress, e.g. "Receiving files: 40% of 1.2 GB".
     @Published private(set) var transferStatus: String?
     /// The Mac's screen is locked: a remote user sees only the wallpaper (macOS hides the lock
@@ -91,6 +94,8 @@ final class ServerController: ObservableObject {
         center.publisher(for: Notification.Name("com.apple.screenIsUnlocked"))
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.setScreenLocked(false) }.store(in: &subscriptions)
+        Timer.publish(every: 30, on: .main, in: .common).autoconnect().prepend(Date())
+            .sink { [weak self] _ in self?.refreshRemoteAccess() }.store(in: &subscriptions)
         settings.$keepAwake.sink { [weak self] keep in
             guard let self, session != nil else { return }
             if keep { _ = power.begin(reason: "ClawTank remote session") } else { power.end() }
@@ -400,5 +405,25 @@ extension ServerController {
         }
         videoStatus = text
         video.setOverlayText(text)
+    }
+}
+
+// MARK: - Remote access (Tailscale)
+
+extension ServerController {
+    /// Re-detects Tailscale and the wake setting (runs the CLI off the main thread).
+    func refreshRemoteAccess() {
+        Task.detached(priority: .utility) {
+            let state = RemoteAccess.detect()
+            let wake = RemoteAccess.wakeForNetworkAccess()
+            await MainActor.run { [weak self] in
+                self?.remote = state
+                self?.wakeForNetwork = wake
+            }
+        }
+    }
+
+    func copyRemoteAddress() {
+        if let address = remote.remoteAddress { Self.copyToPasteboard(address) }
     }
 }

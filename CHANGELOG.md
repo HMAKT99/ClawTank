@@ -4,6 +4,10 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Phase 8 — Secure remote access (2026-10-21)
+- Remote access from anywhere via Tailscale, with no port forwarding and nothing exposed publicly (ADR-022). ClawTank detects Tailscale and shows the MagicDNS name or IP to connect to: "Copy Remote Address" in the menu, a new Settings → Remote Access tab with a guided flow, and a "From anywhere" tab in the connect guide.
+- Shows whether "Wake for network access" is on, and how to turn it on. New guide: docs/remote-access.md (Tailscale setup, Wake-on-LAN, why not port-forward).
+
 ### Phase 7 — Files and quality (2026-10-21)
 - Copy and paste files and folders both ways over the clipboard. Client → Mac lands in ~/Downloads/ClawTank and is put on the pasteboard for Finder; Mac → client serves Finder copies.
   - Paths are re-sanitized, and free disk space is checked first.

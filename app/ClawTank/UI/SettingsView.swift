@@ -15,6 +15,8 @@ struct SettingsView: View {
                 .tabItem { Label("Display & Quality", systemImage: "display") }
             SecuritySettings(server: server, settings: settings)
                 .tabItem { Label("Security", systemImage: "lock.shield") }
+            RemoteAccessSettings(server: server)
+                .tabItem { Label("Remote Access", systemImage: "globe") }
         }
         .padding(20)
         .frame(minWidth: 520, minHeight: 420)

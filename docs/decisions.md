@@ -120,3 +120,19 @@ Changes apply live with `VTSessionSetProperty`, with no keyframe.
 - The "Sharp text" preset is renamed "High quality (more bandwidth)", since bit rate doesn't sharpen text.
 
 **Later.** Build AVC444: chroma packing per MS-RDPEGFX 3.3.8.3 on the GPU, two-view encoding via `send_avc444_frame`. Validate it with FreeRDP `/gfx:avc444` decoding in CI before shipping.
+
+## ADR-022 — Remote access via Tailscale detection, not embedded WireGuard
+**Context.** Phase 8 asks for remote access without port forwarding, with nothing exposed publicly by default.
+- Embedding WireGuard in a macOS app needs a Network Extension (packet tunnel). That requires a paid Apple Developer account, a provisioning profile and the System Extension approval flow, which conflicts with a free, ad-hoc/self-built distribution.
+- It also means running key exchange, NAT traversal and relays ourselves.
+- Tailscale already provides WireGuard with NAT traversal, DERP relays and identity, and is free for personal use.
+
+**Decision.** ClawTank stays LAN-only by default. Its filter already accepts 100.64.0.0/10 and ULA ranges, which cover Tailscale's IPv4 and `fd7a:115c:a1e0::/48`. ClawTank only *detects* Tailscale:
+- It runs `tailscale status --json` (the CLI in Tailscale.app or Homebrew, 3 s timeout, off the main thread, every 30 s).
+- If there's no CLI, it falls back to looking for a 100.64/10 interface address.
+
+It shows the MagicDNS name or IP in the menu, Settings → Remote Access (a guided flow for each state), onboarding and the connect guide. It never changes Tailscale's configuration. It also reports the `pmset` "Wake for network access" setting. User guide: docs/remote-access.md.
+**Consequences.**
+- Remote access depends on a third-party service. Any WireGuard/VPN that lands clients in a LAN/CGNAT/ULA range also works (for example headscale or a router VPN), just without auto-detection.
+- 100.64/10 is also carrier-grade NAT space, so a CGNAT neighbour on the same ISP segment counts as "local". NLA, the lockout and the optional allowlist still apply.
+- No Tailscale "auto-config" (for example `tailscale serve`) in v1: it isn't needed, since tailnet peers reach the port directly.
