@@ -80,8 +80,28 @@ final class RdpServer: @unchecked Sendable {
         case clipboardRemoteFormats([ClipboardFormatRef])
         case clipboardDataRequested(format: UInt32)
         case clipboardData(format: UInt32)
+        case clipboardRemoteFiles([RemoteFile])
+        case clipboardFileRequested(stream: UInt32, index: Int, query: FileQuery)
+        case clipboardFileContents(stream: UInt32)
         case stopped
         case error(String)
+    }
+
+    struct RemoteFile: Equatable, Sendable {
+        let path: String
+        let size: UInt64
+        let isDirectory: Bool
+    }
+
+    enum FileQuery: Equatable, Sendable {
+        case size
+        case range(position: UInt64, length: Int)
+    }
+
+    enum FileAnswer: Equatable, Sendable {
+        case data(Data)
+        case size(UInt64)
+        case error
     }
 
     struct ClipboardFormatRef: Equatable, Sendable {
@@ -110,8 +130,9 @@ final class RdpServer: @unchecked Sendable {
         case failed(status: UInt32)
     }
 
-    private let lock = NSLock()
-    private var handle: OpaquePointer?
+    /// Guards `handle`; extensions in RdpServer+*.swift take it around every core call.
+    let lock = NSLock()
+    private(set) var handle: OpaquePointer?
     private var sink: Unmanaged<RdpEventSink>?
 
     /// The bound port (useful when `port` was 0).
@@ -193,56 +214,6 @@ final class RdpServer: @unchecked Sendable {
         }
     }
 
-    @discardableResult
-    func clipboardAnnounce(_ formats: [ClipboardFormatRef]) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let handle else { return false }
-        let ids = formats.map(\.id)
-        let names = formats.map { $0.name.flatMap { strdup($0) } }
-        defer { names.forEach { free($0) } }
-        let pointers = names.map { UnsafePointer($0) }
-        return ids.withUnsafeBufferPointer { idBuffer in
-            pointers.withUnsafeBufferPointer { nameBuffer in
-                ct_clipboard_announce(handle, idBuffer.baseAddress, nameBuffer.baseAddress, formats.count)
-            }
-        }
-    }
-
-    /// Answers the client's pending request (nil = can't provide).
-    @discardableResult
-    func clipboardProvide(_ data: Data?) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let handle else { return false }
-        guard let data else { return ct_clipboard_provide(handle, nil, 0, false) }
-        return data.withUnsafeBytes {
-            ct_clipboard_provide(handle, $0.bindMemory(to: UInt8.self).baseAddress, $0.count, true)
-        }
-    }
-
-    @discardableResult
-    func clipboardRequest(_ format: UInt32) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let handle else { return false }
-        return ct_clipboard_request(handle, format)
-    }
-
-    /// The oldest data received from the client: (format, data or nil on client error).
-    func clipboardTakeData() -> (format: UInt32, data: Data?)? {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let handle else { return nil }
-        var buffer = CtBuffer(data: nil, len: 0)
-        var succeeded = false
-        let format = ct_clipboard_take_data(handle, &buffer, &succeeded)
-        defer { ct_buffer_free(buffer) }
-        guard format != 0 else { return nil }
-        let data = buffer.data.map { Data(bytes: $0, count: buffer.len) } ?? Data()
-        return (format, succeeded ? data : nil)
-    }
-
     /// Ends the connected client's session; the server keeps listening.
     @discardableResult
     func disconnectClient() -> Bool {
@@ -290,59 +261,6 @@ final class RdpServer: @unchecked Sendable {
         return ct_server_video_stats(handle)
     }
 
-    private static func decodeMedia(kind: CtEventKind, detail: String) -> Event? {
-        switch kind {
-        case CT_EVENT_KIND_AUDIO_START:
-            let parts = detail.split(separator: "x").compactMap { Int($0) }
-            return parts.count == 2 ? .audioStart(rate: parts[0], channels: parts[1]) : .error("bad audio \(detail)")
-        case CT_EVENT_KIND_AUDIO_STOP: return .audioStop
-        case CT_EVENT_KIND_CLIPBOARD_READY: return .clipboardReady
-        case CT_EVENT_KIND_CLIPBOARD_REMOTE_FORMATS:
-            let formats = detail.split(separator: "\n").compactMap { line -> ClipboardFormatRef? in
-                let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
-                guard let id = UInt32(parts[0]) else { return nil }
-                return ClipboardFormatRef(id: id, name: parts.count > 1 ? parts[1] : nil)
-            }
-            return .clipboardRemoteFormats(formats)
-        case CT_EVENT_KIND_CLIPBOARD_DATA_REQUESTED: return UInt32(detail).map { .clipboardDataRequested(format: $0) }
-        case CT_EVENT_KIND_CLIPBOARD_DATA: return UInt32(detail).map { .clipboardData(format: $0) }
-        default: return nil
-        }
-    }
-
-    private static func decodeVideo(kind: CtEventKind, detail: String) -> Event? {
-        if let media = decodeMedia(kind: kind, detail: detail) { return media }
-        switch kind {
-        case CT_EVENT_KIND_VIDEO_START:
-            let size = detail.split(separator: "x").compactMap { Int($0) }
-            return size.count == 2 ? .videoStart(width: size[0], height: size[1]) : .error("bad video size \(detail)")
-        case CT_EVENT_KIND_VIDEO_STOP:
-            return .videoStop
-        case CT_EVENT_KIND_VIDEO_RESIZE:
-            let parts = detail.split(whereSeparator: { $0 == "x" || $0 == "@" }).compactMap { Int($0) }
-            return parts.count == 3 ? .videoResize(width: parts[0], height: parts[1], scalePercent: parts[2])
-                : .error("bad resize \(detail)")
-        default:
-            return nil
-        }
-    }
-
-    fileprivate static func decode(kind: CtEventKind, detail: String) -> Event {
-        let parts = detail.split(separator: "\n", maxSplits: 1).map(String.init)
-        let peer = parts.first ?? ""
-        let error = parts.count > 1 ? parts[1] : nil
-        if let video = decodeVideo(kind: kind, detail: detail) { return video }
-        switch kind {
-        case CT_EVENT_KIND_LISTENING: return .listening(detail)
-        case CT_EVENT_KIND_REJECTED: return .rejected(peer: peer, reason: error ?? "")
-        case CT_EVENT_KIND_LOCKED_OUT: return .lockedOut(ip: peer, minutes: Int(error ?? "") ?? 0)
-        case CT_EVENT_KIND_CLIENT_CONNECTED: return .clientConnected(detail)
-        case CT_EVENT_KIND_CLIENT_DISCONNECTED: return .clientDisconnected(peer: peer, error: error)
-        case CT_EVENT_KIND_CONNECTION_FAILED: return .connectionFailed(peer: peer, error: error ?? "unknown error")
-        case CT_EVENT_KIND_STOPPED: return .stopped
-        default: return .error(detail)
-        }
-    }
 }
 
 /// Holds an `RdpServer`'s handlers for the native server's lifetime (passed as `ctx`).

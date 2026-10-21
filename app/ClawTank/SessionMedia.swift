@@ -13,11 +13,12 @@ final class SessionMedia {
     private let localMute = LocalMute()
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "media")
 
-    init(server: RdpServer, settings: AppSettings) {
+    init(server: RdpServer, settings: AppSettings, onTransferStatus: @escaping (String?) -> Void = { _ in }) {
         self.server = server
         self.settings = settings
         if settings.clipboardEnabled {
             let service = ClipboardService(server: server)
+            service.onTransferStatus = onTransferStatus
             service.start()
             clipboard = service
         }
@@ -27,11 +28,25 @@ final class SessionMedia {
         switch event {
         case .audioStart(let rate, let channels): startAudio(rate: rate, channels: channels)
         case .audioStop: stopAudio()
+        default: handleClipboard(event)
+        }
+    }
+
+    private func handleClipboard(_ event: RdpServer.Event) {
+        switch event {
         case .clipboardReady: clipboard?.channelReady()
         case .clipboardRemoteFormats(let formats): clipboard?.remoteCopied(formats)
         case .clipboardDataRequested(let format):
             if let clipboard { clipboard.dataRequested(format) } else { server.clipboardProvide(nil) }
         case .clipboardData: clipboard?.remoteDataArrived()
+        case .clipboardRemoteFiles(let files): clipboard?.remoteFilesListed(files)
+        case .clipboardFileContents(let stream): clipboard?.fileContentsArrived(stream: stream)
+        case .clipboardFileRequested(let stream, let index, let query):
+            if let clipboard {
+                clipboard.fileRequested(stream: stream, index: index, query: query)
+            } else {
+                server.clipboardAnswerFile(stream: stream, .error)
+            }
         default: break
         }
     }

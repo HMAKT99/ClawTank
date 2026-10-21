@@ -75,6 +75,7 @@ struct StatusMenu: View {
             Text("From \(session.peer) since \(session.since.formatted(date: .omitted, time: .shortened))")
             if let display = server.displayDescription { Text(display) }
             if let video = server.videoStatus { Text(video) }
+            if let transfer = server.transferStatus { Text(transfer) }
             Button("Disconnect \(session.peer)") { server.disconnectClient() }
         }
         if server.screenLocked {

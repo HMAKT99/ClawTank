@@ -43,6 +43,8 @@ final class ServerController: ObservableObject {
     @Published private(set) var videoStatus: String?
     /// e.g. "Virtual display 1512×982" while streaming.
     @Published private(set) var displayDescription: String?
+    /// File transfer progress, e.g. "Receiving files: 40% of 1.2 GB".
+    @Published private(set) var transferStatus: String?
     /// The Mac's screen is locked: a remote user sees only the wallpaper (macOS hides the lock
     /// screen from capture and blocks synthetic input there; see ADR-018).
     @Published private(set) var screenLocked = false
@@ -173,7 +175,7 @@ final class ServerController: ObservableObject {
         case .videoStop:
             stopVideo()
         case .audioStart, .audioStop, .clipboardReady, .clipboardRemoteFormats, .clipboardDataRequested,
-             .clipboardData:
+             .clipboardData, .clipboardRemoteFiles, .clipboardFileRequested, .clipboardFileContents:
             if let media { media.handle(event) } else if case .clipboardDataRequested = event {
                 server?.clipboardProvide(nil)
             }
@@ -245,7 +247,9 @@ final class ServerController: ObservableObject {
         record(.connected, ip)
         if settings.keepAwake { _ = power.begin(reason: "ClawTank remote session") }
         startInput()
-        if let server { media = SessionMedia(server: server, settings: settings) }
+        if let server {
+            media = SessionMedia(server: server, settings: settings) { [weak self] in self?.transferStatus = $0 }
+        }
     }
 
     private func endSession() {

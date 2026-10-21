@@ -21,6 +21,11 @@ final class ClipboardService {
     private var pending: [UInt32: String] = [:]
     private var received: [String: Data] = [:]
     private var deadline: Date?
+    private var localFiles: LocalFileList?
+    private var receiver: FileReceiver?
+    /// Progress text for the menu (nil when idle).
+    var onTransferStatus: (String?) -> Void = { _ in }
+    static let fileListName = "FileGroupDescriptorW"
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "clipboard")
 
     init(server: RdpServer, pasteboard: NSPasteboard = .general) {
@@ -36,6 +41,9 @@ final class ClipboardService {
     }
 
     func stop() {
+        receiver = nil
+        localFiles = nil
+        onTransferStatus(nil)
         timer?.invalidate()
         timer = nil
         ready = false
@@ -54,15 +62,13 @@ final class ClipboardService {
     func remoteCopied(_ formats: [RdpServer.ClipboardFormatRef]) {
         pending.removeAll()
         received.removeAll()
+        // Files take precedence: fetch the list; contents follow once it arrives.
+        if let files = formats.first(where: { $0.name == Self.fileListName }) {
+            server.clipboardRequest(files.id)
+            return
+        }
         for format in formats {
-            switch (format.id, format.name) {
-            case (ClipboardFormats.unicodeText, _): pending[format.id] = "text"
-            case (ClipboardFormats.dib, _): pending[format.id] = "dib"
-            case (_, ClipboardFormats.rtfName?): pending[format.id] = "rtf"
-            case (_, ClipboardFormats.htmlName?): pending[format.id] = "html"
-            case (_, ClipboardFormats.pngName?): pending[format.id] = "png"
-            default: break
-            }
+            if let kind = Self.kind(of: format) { pending[format.id] = kind }
         }
         // Prefer PNG over DIB when both are offered.
         if pending.values.contains("png"), let dib = pending.first(where: { $0.value == "dib" })?.key {
@@ -73,12 +79,53 @@ final class ClipboardService {
         for id in pending.keys.sorted() { server.clipboardRequest(id) }
     }
 
+    /// Which of our supported kinds a client format is, if any.
+    static func kind(of format: RdpServer.ClipboardFormatRef) -> String? {
+        switch (format.id, format.name) {
+        case (ClipboardFormats.unicodeText, _): "text"
+        case (ClipboardFormats.dib, _): "dib"
+        case (_, ClipboardFormats.rtfName?): "rtf"
+        case (_, ClipboardFormats.htmlName?): "html"
+        case (_, ClipboardFormats.pngName?): "png"
+        default: nil
+        }
+    }
+
     func remoteDataArrived() {
         while let (format, data) = server.clipboardTakeData() {
             guard let kind = pending.removeValue(forKey: format) else { continue }
             if let data { received[kind] = data }
         }
         if pending.isEmpty { writeReceived() }
+    }
+
+    func remoteFilesListed(_ files: [RdpServer.RemoteFile]) {
+        guard !files.isEmpty, receiver == nil else { return }
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let receiver = FileReceiver(server: server, files: files, downloads: downloads, onStatus: { [weak self] in
+            self?.onTransferStatus($0)
+        }, onFinished: { [weak self] urls in
+            self?.receiver = nil
+            self?.putFilesOnPasteboard(urls)
+        })
+        self.receiver = receiver
+        receiver?.start()
+    }
+
+    func fileContentsArrived(stream: UInt32) {
+        receiver?.contentsArrived(stream: stream)
+    }
+
+    func fileRequested(stream: UInt32, index: Int, query: RdpServer.FileQuery) {
+        server.clipboardAnswerFile(stream: stream, localFiles?.answer(index: index, query: query) ?? .error)
+    }
+
+    private func putFilesOnPasteboard(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        pasteboard.clearContents()
+        pasteboard.writeObjects(urls as [NSURL])
+        ourChange = pasteboard.changeCount
+        lastSeenChange = pasteboard.changeCount
     }
 
     func dataRequested(_ format: UInt32) {
@@ -102,6 +149,15 @@ final class ClipboardService {
 
     private func announce() {
         guard ready else { return }
+        let fileURLs = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
+            as? [URL] ?? []
+        if !fileURLs.isEmpty {
+            let list = LocalFileList.build(from: fileURLs)
+            localFiles = list
+            server.clipboardAnnounceFiles(list.entries)
+            return
+        }
+        localFiles = nil
         let types = Set(pasteboard.types ?? [])
         var formats: [RdpServer.ClipboardFormatRef] = []
         if types.contains(.string) { formats.append(.init(id: ClipboardFormats.unicodeText, name: nil)) }
