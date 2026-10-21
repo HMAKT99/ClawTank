@@ -152,3 +152,17 @@ It shows the MagicDNS name or IP in the menu, Settings → Remote Access (a guid
 - Input is injected with CGEvent like RDP input, so Accessibility is required.
 - A locked screen shows only the wallpaper (ADR-018), and `get_state` reports `screen_locked`.
 - The local physical keyboard and mouse don't pause agents in v1; only RDP input does. The Stop button covers someone at the Mac.
+
+## ADR-024 — Distribution: ad-hoc signed beta DMG, no update feed yet
+**Context.** Phase 10 asks for a versioned DMG, checksums and release notes, plus a Sparkle-style update feed "when signed". The maintainer has no Apple Developer ID yet.
+**Decision.**
+- **Version.** 0.9.0 beta (maintainer's choice), because the manual client, Mac mini and Wi-Fi checks are still open. 1.0.0 follows once they pass.
+- **`make release`.** Builds in `build/release` (it never touches the dev-signed app) and ad-hoc signs. It produces `ClawTank-<v>-arm64.dmg`, `SHA256SUMS` and `RELEASE_NOTES.md` from the CHANGELOG, after verifying the DMG contents and signature.
+- **Developer ID.** Signing plus notarization runs when `CLAWTANK_SIGN_IDENTITY` / `CLAWTANK_NOTARY_PROFILE` are set. It's written but untested.
+- **Updates.** No update feed until builds are signed.
+- **Publishing.** GitHub Releases are created as drafts and published by the maintainer.
+
+**Consequences.**
+- Users do a one-time "Open Anyway". TCC permissions reset on each update, since an ad-hoc identity changes every build; the README FAQ covers this.
+- Apple silicon only (Intel: build from source).
+- Revisit when a Developer ID is available: test notarization, then add Sparkle with EdDSA-signed appcasts.

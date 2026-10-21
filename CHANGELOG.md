@@ -4,6 +4,24 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-21
+
+First public beta. ClawTank is a native RDP server for macOS: connect from Windows App, `mstsc`, FreeRDP or any standard RDP client and get a hardware-accelerated desktop.
+
+**Highlights**
+- H.264 (AVC420) over the RDP graphics pipeline: about 60 fps at under 10% CPU on Apple silicon.
+- Live resize to the client's window, with Retina virtual displays (great for a headless Mac mini).
+- Keyboard and mouse with local cursor shapes, system audio, two-way clipboard (text, rich text, images), and file and folder copy and paste.
+- Secure by default: TLS with NLA, LAN-only, lockout after failed logins, and an audit log. Reach it from anywhere with Tailscale, with no port forwarding.
+- Agent API and MCP server: let local AI agents see and drive the Mac, with tokens, an audit log and a visible Stop.
+
+**Known limitations in this beta**
+- Not notarized yet, so you need the one-time "Open Anyway" step. Apple silicon only.
+- One monitor per session (multi-monitor clients get one resizable desktop). No AVC444 (full-colour) mode; Retina sessions give crisp text instead.
+- A locked Mac shows only the wallpaper to remote clients until it's unlocked at the Mac (macOS limitation).
+- Manual checks against Windows `mstsc`/Windows App, a headless Mac mini and real-world Wi-Fi are still in progress. Please report issues.
+- No automatic updates yet: watch GitHub Releases.
+
 ### Phase 9 — Agent API and MCP (2026-10-21)
 - A local Agent API lets AI agents on the Mac take screenshots, click, type, press shortcuts, read the cursor and frontmost app, open apps, and create or remove virtual displays (docs/agent-api.md, ADR-023).
   - Off by default. Loopback only, with per-agent tokens (only hashes stored).

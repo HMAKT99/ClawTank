@@ -13,7 +13,7 @@ To connect, make sure Tailscale is connected on both devices. It reconnects auto
 
 ## Why not port forwarding?
 
-Forwarding TCP 3389 on your router exposes the Mac's login to everyone on the internet, and RDP ports are scanned constantly. ClawTank rejects public addresses by default, even if a port is forwarded. Allowing them takes deliberately turning off **Settings → Security → Local network only**, which we don't recommend. With Tailscale, only devices signed in to your tailnet can even reach the port.
+Forwarding TCP 3389 on your router exposes the Mac's login to everyone on the internet, and RDP ports are scanned constantly. ClawTank rejects public addresses by default, even if a port is forwarded. Allowing them takes deliberately turning off **Settings → Security → Only allow connections from my local network**, which we don't recommend. With Tailscale, only devices signed in to your tailnet can even reach the port.
 
 ## Waking a sleeping Mac
 

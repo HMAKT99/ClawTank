@@ -55,7 +55,7 @@ Results, 2026-10-21, M2 MacBook Air, macOS 15.6.1:
 Automated: 44 Swift tests (audit log, rotation, password policy, settings, password change, diagnostics without secrets) and Rust security end-to-end tests (lockout before TLS, live password change, host disconnect).
 Live, 2026-10-21:
 - ✅ Connection log on disk recorded a failed login, then connected and disconnected, with time and address. Wording was improved after this run.
-- ✅ `make package` produces `dist/ClawTank-0.1.0.dmg` (9.8 MB, app plus /Applications link) with a .sha256.
+- ✅ (Phase 0) `make package` produced `dist/ClawTank-0.1.0.dmg` (9.8 MB, app plus /Applications link) with a .sha256.
 - ⚠️ Found: with the Mac locked, clients see only the wallpaper (ADR-018). The menu now says so.
 - [ ] Human, the acceptance test: on a fresh macOS user account, open the DMG, drag to Applications, open (Open Anyway), follow setup (Screen Recording, Accessibility, password), then connect from Windows App. Target: under 2 minutes.
 - [ ] Human: Settings window tabs, the LAN-only warning dialog, Start at login (may need approval in Login Items), Export Diagnostics, Disconnect from the menu, VoiceOver labels.
@@ -100,3 +100,10 @@ Live, 2026-10-21, loopback, `files_demo` (examples/files_demo.rs) acting as the 
   - The audit log has one `agentAction` line per step.
   - A bad token got 401 and was logged as `agentRefused`; an `Origin` header got 403.
   - The API listened on 127.0.0.1:3390 only, and refused connections once turned off. ✅
+
+## Phase 10 — release
+- `make release` produces `dist/ClawTank-0.9.0-arm64.dmg` (10.3 MB), `SHA256SUMS` and `RELEASE_NOTES.md`. The script refuses mismatched versions or a missing changelog section, and verifies the DMG (hdiutil verify, read-only mount, layout, `codesign --verify --deep --strict`, bundled `clawtank-mcp`).
+- Release builds go to `build/release` (ad-hoc), so the dev-signed app keeps its TCC grants.
+- [ ] Human: on another Mac, or a fresh user account, a person who hasn't seen ClawTank installs from the README only (download → Open Anyway → setup → connect from a client). Note any step that needed help.
+- [ ] Human: record the demo GIF (docs/media/demo.gif) and enable it in the README.
+- [ ] Untested: Developer ID signing and notarization path (needs an Apple Developer account).
