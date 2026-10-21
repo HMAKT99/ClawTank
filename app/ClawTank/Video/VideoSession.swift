@@ -30,6 +30,7 @@ final class VideoSession: @unchecked Sendable {
     private var encoder: H264Encoder?
     private var capture: ScreenCapture?
     private let overlay = StatsOverlay()
+    private var adaptive: AdaptiveBitrate?
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "video")
 
     let target: DisplayTarget
@@ -62,12 +63,24 @@ final class VideoSession: @unchecked Sendable {
         lock.withLock { overlayText = text }
     }
 
+    /// Feeds one second of network measurements; returns the bit rate in use and whether the
+    /// link looked congested.
+    func adapt(_ sample: AdaptiveBitrate.Sample) -> (bitRate: Int, congested: Bool)? {
+        let (changed, state) = lock.withLock { () -> (Int?, AdaptiveBitrate?) in
+            let changed = adaptive?.update(sample)
+            return (changed, adaptive)
+        }
+        if let changed { encoder?.setBitRate(changed) }
+        return state.map { ($0.current, $0.congested) }
+    }
+
     func start() async throws {
         let baseRate = H264Encoder.Settings.defaultBitRate(width: codedWidth, height: codedHeight, frameRate: frameRate)
         let settings = H264Encoder.Settings(
             width: codedWidth, height: codedHeight, frameRate: frameRate,
             averageBitRate: max(1_000_000, Int(Double(baseRate) * bitRateFactor)),
             lowLatencyRateControl: true)  // ADR-016: tighter p95 encode latency
+        lock.withLock { adaptive = AdaptiveBitrate(target: settings.averageBitRate) }
         let encoder = try H264Encoder(settings: settings) { [weak self] frame in
             self?.deliver(frame)
         }

@@ -12,6 +12,7 @@
 //!   `GraphicsPipelineHandler` while holding the pipeline mutex, so handler callbacks only
 //!   touch atomics (never `inner`).
 
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
@@ -44,6 +45,9 @@ pub struct VideoStats {
     pub frames_dropped: u64,
     pub frames_acked: u64,
     pub frames_in_flight: u32,
+    /// Smoothed time from sending a frame to the client acknowledging it (decode included),
+    /// in microseconds; 0 until the first ack. The main congestion signal for adaptive bitrate.
+    pub ack_latency_us: u32,
 }
 
 /// Shared between the EGFX factory/handler (IronRDP side) and the FFI (host side).
@@ -54,6 +58,10 @@ pub struct VideoHub {
     channel_open: AtomicBool,
     session_size: AtomicU32,
     frames_acked: AtomicU64,
+    /// Send time per in-flight frame id. Its own lock: taken from the handler (pipeline mutex
+    /// held) and from `submit_h264` *after* the pipeline mutex is released, never nested.
+    send_times: Mutex<HashMap<u32, Instant>>,
+    ack_latency_us: AtomicU32,
 }
 
 struct Inner {
@@ -92,6 +100,8 @@ impl VideoHub {
             channel_open: AtomicBool::new(false),
             session_size: AtomicU32::new(pack(1920, 1080)),
             frames_acked: AtomicU64::new(0),
+            send_times: Mutex::new(HashMap::new()),
+            ack_latency_us: AtomicU32::new(0),
         }
     }
 
@@ -125,6 +135,11 @@ impl VideoHub {
         inner.bytes_sent = 0;
         inner.frames_dropped = 0;
         self.frames_acked.store(0, Ordering::Release);
+        self.ack_latency_us.store(0, Ordering::Release);
+        self.send_times
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     /// The client asked for a new desktop size (Display Control). The next keyframe at that size
@@ -162,8 +177,24 @@ impl VideoHub {
     }
 
     /// Handler callback: the client acknowledged a frame.
-    pub(crate) fn on_frame_ack(&self) {
+    pub(crate) fn on_frame_ack(&self, frame_id: u32) {
         self.frames_acked.fetch_add(1, Ordering::AcqRel);
+        let sent_at = self
+            .send_times
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&frame_id);
+        if let Some(sent_at) = sent_at {
+            let sample = u32::try_from(sent_at.elapsed().as_micros()).unwrap_or(u32::MAX);
+            // EWMA with alpha 1/8: smooth enough to ignore single hiccups, quick enough to react.
+            let old = self.ack_latency_us.load(Ordering::Acquire);
+            let new = if old == 0 {
+                sample
+            } else {
+                old - old / 8 + sample / 8
+            };
+            self.ack_latency_us.store(new, Ordering::Release);
+        }
     }
 
     /// Handler callback, or session end: the graphics channel is gone.
@@ -207,6 +238,7 @@ impl VideoHub {
             frames_acked: acked,
             frames_in_flight: u32::try_from(inner.frames_sent.saturating_sub(acked))
                 .unwrap_or(u32::MAX),
+            ack_latency_us: self.ack_latency_us.load(Ordering::Acquire),
         }
     }
 
@@ -238,7 +270,7 @@ impl VideoHub {
 
         let (w, h) = self.session_size();
         let timestamp_ms = u32::try_from(inner.started.elapsed().as_millis()).unwrap_or(u32::MAX);
-        let (sent, channel_id, messages) = {
+        let (frame_id, channel_id, messages) = {
             let mut gfx = handle.lock().unwrap_or_else(|e| e.into_inner());
             if !gfx.is_ready() {
                 return SubmitResult::NotReady;
@@ -273,11 +305,18 @@ impl VideoHub {
                 quantization_parameter: 22,
                 quality: 100,
             };
-            let sent = gfx
-                .send_avc420_frame(surface, data, &[region], timestamp_ms)
-                .is_some();
-            (sent, gfx.channel_id(), gfx.drain_output())
+            let frame_id = gfx.send_avc420_frame(surface, data, &[region], timestamp_ms);
+            (frame_id, gfx.channel_id(), gfx.drain_output())
         };
+        let sent = frame_id.is_some();
+        if let Some(frame_id) = frame_id {
+            let mut times = self.send_times.lock().unwrap_or_else(|e| e.into_inner());
+            // Bounded: a client that stops acking must not grow this forever.
+            if times.len() > 256 {
+                times.clear();
+            }
+            times.insert(frame_id, Instant::now());
+        }
 
         if !messages.is_empty()
             && let Some(channel_id) = channel_id

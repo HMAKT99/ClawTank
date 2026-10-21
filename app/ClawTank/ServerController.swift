@@ -386,9 +386,18 @@ extension ServerController {
         let encodeTime = now.encodeSeconds - lastCounters.encodeSeconds
         let skipped = now.skippedFrames - lastCounters.skippedFrames
         lastCounters = now
-        let text = Self.formatVideoStats(fps: encoded, bytesPerSecond: bytes,
+        var text = Self.formatVideoStats(fps: encoded, bytesPerSecond: bytes,
                                          encodeMs: encoded > 0 ? encodeTime * 1000 / Double(encoded) : 0,
                                          skipped: skipped)
+        if let core = server?.videoStats {
+            let sample = AdaptiveBitrate.Sample(skippedFrames: skipped, framesInFlight: Int(core.frames_in_flight),
+                                                ackLatencyMs: Double(core.ack_latency_us) / 1000,
+                                                framesSent: encoded)
+            if let (rate, congested) = video.adapt(sample) {
+                text += String(format: " · rtt %.0f ms · target %.1f Mbit/s%@", sample.ackLatencyMs,
+                               Double(rate) / 1_000_000, congested ? " (congested)" : "")
+            }
+        }
         videoStatus = text
         video.setOverlayText(text)
     }

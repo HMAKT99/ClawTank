@@ -298,6 +298,10 @@ typedef struct {
   uint64_t frames_dropped;
   uint64_t frames_acked;
   uint32_t frames_in_flight;
+  /**
+   * Smoothed send→ack time in microseconds (0 = no acks yet).
+   */
+  uint32_t ack_latency_us;
 } CtVideoStats;
 
 #ifdef __cplusplus

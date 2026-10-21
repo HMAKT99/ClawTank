@@ -9,3 +9,7 @@ line_length:
 identifier_name:
   # Coordinates and loop indices read better short.
   excluded: [x, y, dx, dy, i, id, ip]
+file_length:
+  # The server controller coordinates every subsystem; keep it in one file with private state.
+  warning: 500
+  error: 600

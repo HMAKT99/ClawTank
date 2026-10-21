@@ -110,6 +110,8 @@ pub struct CtVideoStats {
     pub frames_dropped: u64,
     pub frames_acked: u64,
     pub frames_in_flight: u32,
+    /// Smoothed send→ack time in microseconds (0 = no acks yet).
+    pub ack_latency_us: u32,
 }
 
 /// Log severity for [`CtLogCallback`].
@@ -961,6 +963,7 @@ pub unsafe extern "C" fn ct_server_video_stats(server: *const CtServer) -> CtVid
         frames_dropped: s.frames_dropped,
         frames_acked: s.frames_acked,
         frames_in_flight: s.frames_in_flight,
+        ack_latency_us: s.ack_latency_us,
     }
 }
 

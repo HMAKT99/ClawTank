@@ -62,8 +62,8 @@ impl GraphicsPipelineHandler for GfxHandler {
         self.hub.on_ready();
     }
 
-    fn on_frame_ack(&mut self, _frame_id: u32, _queue_depth: u32, _total_frames_decoded: u32) {
-        self.hub.on_frame_ack();
+    fn on_frame_ack(&mut self, frame_id: u32, _queue_depth: u32, _total_frames_decoded: u32) {
+        self.hub.on_frame_ack(frame_id);
     }
 
     fn on_close(&mut self) {

@@ -153,6 +153,14 @@ final class H264Encoder: @unchecked Sendable {
         }
     }
 
+    /// Changes the bit rate live (adaptive bitrate); takes effect within a few frames.
+    func setBitRate(_ bitsPerSecond: Int) {
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate,
+                             value: bitsPerSecond as CFTypeRef)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_DataRateLimits,
+                             value: [bitsPerSecond * 3 / 16, 1] as CFArray)
+    }
+
     /// Blocks until all submitted frames have been emitted.
     func flush() {
         VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: .invalid)

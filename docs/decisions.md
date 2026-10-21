@@ -93,3 +93,18 @@ Format: context → decision → consequences. Newest last. Status is *Accepted*
 **Decision (now).** Keep the Mac awake during sessions (`PowerAssertions`, default on) so it doesn't lock mid-session. Track `com.apple.screenIsLocked`/`screenIsUnlocked` and show the state in the menu and log. Document the recommended headless setup in the user guide: automatic login, plus "require password after screen saver" set to a long delay or off on a trusted network.
 **Research (Phase 8/10).** Options to unlock remotely without weakening security, all needing investigation: whether a privileged helper can post input to `loginwindow`; how Apple's Screen Sharing unlock flow works through public mechanisms; FileVault considerations. No implementation is promised.
 **Consequences.** Until then, a locked Mac shows wallpaper to remote clients, and the menu says why.
+
+## ADR-019 — Multi-monitor deferred
+**Context.** ironrdp-server 0.13 / ironrdp-acceptor 0.10 ignore the client's GCC monitor data, always send a single-monitor Monitor Layout PDU, and cap Display Control at 1 monitor. IronRDP master only *records* client monitors, and its acceptor still describes one monitor. Supporting it would mean patching two more upstream crates, including connection-sequence code, plus per-monitor virtual displays, capture and encoders.
+**Decision.** Chosen by the maintainer: defer. Multi-monitor clients get one resizable desktop. Revisit when IronRDP gains server multi-monitor support, or contribute it upstream.
+**Consequences.** The Phase 7 "two-monitor session" acceptance item is not met in v1.
+
+## ADR-020 — Adaptive bitrate from EGFX acknowledgements
+**Context.** Wi-Fi throughput and latency vary; a fixed bit rate either wastes quality on good links or stalls bad ones.
+**Decision.** The core times each frame from send to client ack (EWMA, α = 1/8) and reports frames in flight and backpressure skips. Once a second the host's `AdaptiveBitrate` runs:
+- Back off ×0.7 on congestion: more than 2 skips, more than 6 frames in flight, or ack latency above max(80 ms, 3× the best seen).
+- Recover ×1.15 after 3 healthy seconds.
+- Stay between target/6 and the preset's target.
+
+Changes apply live with `VTSessionSetProperty`, with no keyframe.
+**Consequences.** Needs tuning on real Wi-Fi (human checklist). The menu shows rtt, target rate and a congestion flag.

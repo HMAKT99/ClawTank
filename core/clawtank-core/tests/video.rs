@@ -115,8 +115,20 @@ async fn submitted_h264_reaches_an_egfx_client() {
         "bitstreams must arrive unchanged"
     );
     assert_eq!(*recorder.reset_size.lock().unwrap(), Some((1512, 982)));
+    // Acks drive adaptive bitrate: the client acknowledges each frame and we time it.
+    // The client sent its acks while pumping above; give the server a moment to process them.
+    let mut ok = false;
+    for _ in 0..100 {
+        if video.stats().frames_acked >= 2 {
+            ok = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     let stats = video.stats();
+    assert!(ok, "client acknowledged frames: {stats:?}");
     assert_eq!((stats.frames_sent, stats.frames_dropped), (2, 1));
+    assert!(stats.ack_latency_us > 0, "ack latency measured: {stats:?}");
 
     drop(session);
     for _ in 0..100 {
