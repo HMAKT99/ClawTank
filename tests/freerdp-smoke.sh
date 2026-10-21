@@ -19,6 +19,7 @@ log="$(mktemp)"
 server_pid=$!
 client_pid=""
 cleanup() {
+    pkill -f "/v:127.0.0.1:$port" 2>/dev/null || true
     [[ -n "$client_pid" ]] && kill "$client_pid" 2>/dev/null || true
     kill "$server_pid" 2>/dev/null || true
 }
@@ -55,7 +56,10 @@ client_pid=$!
 wait_for "EVENT connected" 20 || fail "session did not start"
 wait_for "Sending test frame" 10 || fail "test frame was not sent"
 sleep 2
-kill "$client_pid"; wait "$client_pid" 2>/dev/null || true
+# xvfb-run is a wrapper script: stop the FreeRDP process itself, not just the wrapper.
+pkill -f "/v:127.0.0.1:$port" 2>/dev/null || true
+kill "$client_pid" 2>/dev/null || true
+wait "$client_pid" 2>/dev/null || true
 client_pid=""
 wait_for "EVENT disconnected" 10 || fail "disconnect not observed"
 
