@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["clawtank-core"]
+members = ["clawtank-core", "clawtank-mcp"]
 # Vendored upstream code is built but not linted or formatted as ours.
 exclude = ["vendor"]
 

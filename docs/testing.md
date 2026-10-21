@@ -85,3 +85,11 @@ Live, 2026-10-21, loopback, `files_demo` (examples/files_demo.rs) acting as the 
 - Unit tests: `tailscale status --json` parsing (Running, NeedsLogin, Stopped, no MagicDNS, unreadable), detection fallbacks (CLI missing → interface scan → not installed), the 100.64/10 range, `pmset` womp parsing, and large CLI output not stalling.
 - Already covered by Rust security tests: 100.64/10 and ULA accepted; public addresses rejected by default.
 - [ ] Human: install Tailscale on the Mac and on a phone or laptop. Turn off the client's Wi-Fi (use cellular), connect to the `*.ts.net` name shown in Settings → Remote Access, and confirm a session works.
+
+## Phase 9 — Agent API and MCP
+- Swift unit tests:
+  - HTTP parsing (incremental, oversize, chunked refused) and a real loopback request
+  - action and key-combo parsing, and the token store (hash only, 0600, revoke, reload)
+  - the router with a fake host: token required, throttling, Origin and Host refusal, every action reported for the audit log, human-wins 409 for 3 s with screenshots still allowed, error codes
+  - app lookup by name and bundle id, with paths refused
+- Rust (`clawtank-mcp`): MCP initialize and version negotiation, tools/list, screenshot → image content with screenshot-pixel → point conversion, API errors → tool errors, loopback-only URLs.

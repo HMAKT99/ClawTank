@@ -4,6 +4,14 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Phase 9 — Agent API and MCP (2026-10-21)
+- A local Agent API lets AI agents on the Mac take screenshots, click, type, press shortcuts, read the cursor and frontmost app, open apps, and create or remove virtual displays (docs/agent-api.md, ADR-023).
+  - Off by default. Loopback only, with per-agent tokens (only hashes stored).
+  - Browser requests are refused, and bad tokens are throttled.
+- `clawtank-mcp`, an MCP server over stdio bundled in the app, so Claude Code and other MCP clients can drive the Mac. Coordinates are in screenshot pixels.
+- While an agent acts, a badge with Stop appears on every display, and the menu-bar icon and menu show it. Every agent request is in the connection log. A person using the Mac over RDP always wins: agent input is refused for 3 s after their input.
+- Settings → Agents: on/off, port, create and revoke tokens, and the MCP setup command.
+
 ### Phase 8 — Secure remote access (2026-10-21)
 - Remote access from anywhere via Tailscale, with no port forwarding and nothing exposed publicly (ADR-022). ClawTank detects Tailscale and shows the MagicDNS name or IP to connect to: "Copy Remote Address" in the menu, a new Settings → Remote Access tab with a guided flow, and a "From anywhere" tab in the connect guide.
 - Shows whether "Wake for network access" is on, and how to turn it on. New guide: docs/remote-access.md (Tailscale setup, Wake-on-LAN, why not port-forward).

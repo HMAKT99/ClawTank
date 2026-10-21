@@ -70,6 +70,12 @@ sign() {
     # shellcheck disable=SC2064
     trap "security list-keychains -d user -s $(printf '%q ' "${original[@]}")" RETURN
     security list-keychains -d user -s "${original[@]}" "$keychain"
+    # Nested executables first (the MCP shim), then the app that seals them.
+    local helper="$app/Contents/MacOS/clawtank-mcp"
+    if [[ -f "$helper" ]]; then
+        codesign --force --sign "$(identity_hash)" --keychain "$keychain" \
+            --options runtime --timestamp=none "$helper"
+    fi
     codesign --force --sign "$(identity_hash)" --keychain "$keychain" \
         --options runtime --timestamp=none "$app"
     codesign --verify --strict "$app"

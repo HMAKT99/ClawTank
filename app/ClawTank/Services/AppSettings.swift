@@ -55,6 +55,9 @@ final class AppSettings: ObservableObject {
     @Published var muteLocalAudio: Bool { didSet { save(muteLocalAudio, "muteLocalAudio") } }
     /// Share the clipboard both ways (applies from the next connection).
     @Published var clipboardEnabled: Bool { didSet { save(clipboardEnabled, "clipboardEnabled") } }
+    /// Local Agent API (127.0.0.1 only). Off by default.
+    @Published var agentAPIEnabled: Bool { didSet { save(agentAPIEnabled, "agentAPIEnabled") } }
+    @Published var agentPort: Int { didSet { save(agentPort, "agentPort") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -73,6 +76,9 @@ final class AppSettings: ObservableObject {
         audioEnabled = defaults.object(forKey: "audioEnabled") as? Bool ?? true
         muteLocalAudio = defaults.bool(forKey: "muteLocalAudio")
         clipboardEnabled = defaults.object(forKey: "clipboardEnabled") as? Bool ?? true
+        agentAPIEnabled = defaults.bool(forKey: "agentAPIEnabled")
+        let savedAgentPort = defaults.integer(forKey: "agentPort")
+        agentPort = (1024...65535).contains(savedAgentPort) ? savedAgentPort : 3390
     }
 
     /// Effective frame rate for capture/encode.
@@ -90,7 +96,8 @@ final class AppSettings: ObservableObject {
             "keepAwake": "\(keepAwake)", "port": "\(port)", "lanOnly": "\(lanOnly)",
             "allowlist": allowlist.isEmpty ? "(none)" : allowlist,
             "audioEnabled": "\(audioEnabled)", "muteLocalAudio": "\(muteLocalAudio)",
-            "clipboardEnabled": "\(clipboardEnabled)"
+            "clipboardEnabled": "\(clipboardEnabled)",
+            "agentAPIEnabled": "\(agentAPIEnabled)", "agentPort": "\(agentPort)"
         ]
     }
 }

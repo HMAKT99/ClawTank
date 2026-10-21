@@ -44,13 +44,15 @@ struct ConnectionLogView: View {
         case .failedLogin: "exclamationmark.triangle"
         case .refused: "hand.raised"
         case .lockedOut: "lock"
+        case .agentAction: "cursorarrow.rays"
+        case .agentRefused: "hand.raised"
         }
     }
 
     private func color(_ outcome: AuditEntry.Outcome) -> Color {
         switch outcome {
-        case .connected, .disconnected: .primary
-        case .failedLogin, .refused: .orange
+        case .connected, .disconnected, .agentAction: .primary
+        case .failedLogin, .refused, .agentRefused: .orange
         case .lockedOut: .red
         }
     }

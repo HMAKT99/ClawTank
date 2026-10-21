@@ -75,9 +75,13 @@ final class ServerController: ObservableObject {
     private var subscriptions: Set<AnyCancellable> = []
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "server")
 
+    /// RDP input marks a person as active; the Agent API yields to them (ADR-023).
+    let humanActivity: HumanActivity
+
     init(settings: AppSettings, security: SecurityService = SecurityService(), audit: AuditLog = AuditLog(),
-         power: PowerManaging = PowerAssertions()) {
+         power: PowerManaging = PowerAssertions(), humanActivity: HumanActivity = HumanActivity()) {
         self.settings = settings
+        self.humanActivity = humanActivity
         self.security = security
         self.audit = audit
         self.power = power
@@ -124,7 +128,10 @@ final class ServerController: ObservableObject {
                     return
                 }
                 Task { @MainActor in self?.handle(event) }
-            }, onInput: { input.handle($0) })
+            }, onInput: { [humanActivity] in
+                humanActivity.touch()
+                input.handle($0)
+            })
             fileServer.attach(created)
             server = created
             status = .listening(port: server?.port ?? port)

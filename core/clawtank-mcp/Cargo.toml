@@ -1,0 +1,13 @@
+[package]
+name = "clawtank-mcp"
+description = "MCP (stdio) server that lets AI agents drive a Mac through ClawTank's local Agent API."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+base64 = "0.22"
+serde_json = "1"

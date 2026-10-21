@@ -136,3 +136,19 @@ It shows the MagicDNS name or IP in the menu, Settings → Remote Access (a guid
 - Remote access depends on a third-party service. Any WireGuard/VPN that lands clients in a LAN/CGNAT/ULA range also works (for example headscale or a router VPN), just without auto-detection.
 - 100.64/10 is also carrier-grade NAT space, so a CGNAT neighbour on the same ISP segment counts as "local". NLA, the lockout and the optional allowlist still apply.
 - No Tailscale "auto-config" (for example `tailscale serve`) in v1: it isn't needed, since tailnet peers reach the port directly.
+
+## ADR-023 — Agent API: loopback REST + bundled stdio MCP shim
+**Context.** Phase 9 asks for a local, authenticated API and an MCP server that let agents list displays, take screenshots, send input, read the cursor and active app, and manage virtual displays. It must be off by default, use per-agent tokens, audit everything, show who is in control, and let a person win any conflict.
+**Decision.** Chosen by the maintainer:
+- **Transport.** The app serves a small HTTP/1.1 JSON API on **127.0.0.1:3390** (Network.framework, one request per connection, 1 MiB body cap).
+- **MCP.** `clawtank-mcp`, a dependency-light Rust binary (serde_json, base64) in the workspace, ships in `ClawTank.app/Contents/MacOS`. It speaks MCP over **stdio** and forwards to the REST API, so it works with every MCP client, and the REST API stays usable from scripts.
+- **Auth.** Each agent gets a 256-bit token, stored only as a SHA-256 hash (0600 file) and compared in constant time. Requests with an Origin header or a non-loopback Host are refused (browsers, DNS rebinding). After 10 bad tokens in 60 s, all requests are throttled.
+- **Human wins.** Agent input and app launches get HTTP 409 for 3 s after any RDP client input. Reads still work.
+- **Visibility.** A badge with a Stop button on every display, a menu-bar icon and a menu line, and every request audited (outcomes `agentAction` / `agentRefused`). Typed text is never logged.
+- **Coordinates.** REST uses display-local points. The MCP shim scales screenshots to ≤1568 px and converts tool coordinates from screenshot pixels, so agents never handle Retina scale.
+
+**Consequences.**
+- Agents must run on the Mac (or tunnel in over SSH). There is no network exposure.
+- Input is injected with CGEvent like RDP input, so Accessibility is required.
+- A locked screen shows only the wallpaper (ADR-018), and `get_state` reports `screen_locked`.
+- The local physical keyboard and mouse don't pause agents in v1; only RDP input does. The Stop button covers someone at the Mac.

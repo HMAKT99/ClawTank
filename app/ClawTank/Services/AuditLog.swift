@@ -1,4 +1,5 @@
-// Local record of every connection attempt: when, from where, as whom, and what happened.
+// Local record of every connection attempt and every Agent API action: when, from where, as
+// whom, and what happened.
 // JSON lines in Application Support, rotated at 1 MB (one previous file kept). It holds no
 // secrets: only addresses, the username clients use, and outcomes.
 
@@ -6,15 +7,31 @@ import Foundation
 
 struct AuditEntry: Codable, Equatable, Sendable, Identifiable {
     enum Outcome: String, Codable, Sendable {
-        case connected, disconnected, failedLogin, refused, lockedOut
+        case connected, disconnected, failedLogin, refused, lockedOut, agentAction, agentRefused
     }
 
-    var id: String { "\(time.timeIntervalSince1970)-\(peer)-\(outcome.rawValue)" }
+    /// Per loaded entry (agents can log several identical lines within a second).
+    let id = UUID()
     let time: Date
     let peer: String
     let user: String?
     let outcome: Outcome
     let detail: String?
+
+    private enum CodingKeys: String, CodingKey { case time, peer, user, outcome, detail }
+
+    init(time: Date, peer: String, user: String?, outcome: Outcome, detail: String?) {
+        self.time = time
+        self.peer = peer
+        self.user = user
+        self.outcome = outcome
+        self.detail = detail
+    }
+
+    static func == (lhs: AuditEntry, rhs: AuditEntry) -> Bool {
+        lhs.time == rhs.time && lhs.peer == rhs.peer && lhs.user == rhs.user && lhs.outcome == rhs.outcome
+            && lhs.detail == rhs.detail
+    }
 
     var summary: String {
         switch outcome {
@@ -23,6 +40,8 @@ struct AuditEntry: Codable, Equatable, Sendable, Identifiable {
         case .failedLogin: "Failed login"
         case .refused: "Refused"
         case .lockedOut: "Locked out"
+        case .agentAction: "Agent action"
+        case .agentRefused: "Agent refused"
         }
     }
 }

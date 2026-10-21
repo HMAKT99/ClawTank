@@ -11,9 +11,11 @@ final class WindowManager {
 
     private var windows: [Kind: NSWindow] = [:]
     private let server: ServerController
+    private let agents: AgentService
 
-    init(server: ServerController) {
+    init(server: ServerController, agents: AgentService) {
         self.server = server
+        self.agents = agents
     }
 
     func show(_ kind: Kind) {
@@ -42,8 +44,9 @@ final class WindowManager {
                     }),
                     size: NSSize(width: 620, height: 520))
         case .settings:
-            Content(title: "ClawTank Settings", view: AnyView(SettingsView(server: server, settings: server.settings)),
-                    size: NSSize(width: 560, height: 460))
+            Content(title: "ClawTank Settings", view: AnyView(SettingsView(server: server, settings: server.settings,
+                                                                         agents: agents)),
+                    size: NSSize(width: 620, height: 520))
         case .log:
             Content(title: "Connection Log", view: AnyView(ConnectionLogView(audit: server.audit)),
                     size: NSSize(width: 760, height: 440))

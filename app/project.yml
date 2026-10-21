@@ -36,6 +36,18 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: ClawTank/Private/ClawTank-Bridging-Header.h
         # System libs the Rust staticlib needs (from `cargo rustc --release -- --print native-static-libs`).
         OTHER_LDFLAGS: ["-lclawtank_core", "-lz", "-liconv", "-framework", "CoreFoundation", "-framework", "Security", "-framework", "SystemConfiguration"]
+    postBuildScripts:
+      # The MCP shim (Rust, built by `make core`) ships inside the app: Contents/MacOS/clawtank-mcp.
+      - name: Embed clawtank-mcp
+        script: |
+          set -e
+          dest="$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/clawtank-mcp"
+          cp "$SRCROOT/../core/target/release/clawtank-mcp" "$dest"
+          codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" --options runtime --timestamp=none "$dest"
+        inputFiles:
+          - $(SRCROOT)/../core/target/release/clawtank-mcp
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/clawtank-mcp
   ClawTankTests:
     type: bundle.unit-test
     platform: macOS

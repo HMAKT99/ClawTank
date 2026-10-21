@@ -1,4 +1,4 @@
-// Settings: General, Display & Quality, Security. Network changes are applied with an explicit
+// Settings: General, Display & Quality, Security, Remote Access, Agents. Network changes are applied with an explicit
 // button (they restart the server and disconnect any client).
 
 import SwiftUI
@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var server: ServerController
     @ObservedObject var settings: AppSettings
+    let agents: AgentService
 
     var body: some View {
         TabView {
@@ -17,6 +18,8 @@ struct SettingsView: View {
                 .tabItem { Label("Security", systemImage: "lock.shield") }
             RemoteAccessSettings(server: server)
                 .tabItem { Label("Remote Access", systemImage: "globe") }
+            AgentSettings(agents: agents, settings: settings)
+                .tabItem { Label("Agents", systemImage: "cursorarrow.rays") }
         }
         .padding(20)
         .frame(minWidth: 520, minHeight: 420)

@@ -417,6 +417,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "clawtank-mcp"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "serde_json",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"

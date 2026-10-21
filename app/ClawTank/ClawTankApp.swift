@@ -3,7 +3,8 @@
 // Starts the RDP server at launch (TLS + NLA, LAN-only by default), shows first-run setup,
 // and while a client is connected streams the display (virtual or physical), injects the
 // client's keyboard and mouse, sends cursor shapes and keeps the Mac awake. The menu shows
-// who is connected and live video stats. See docs/architecture.md.
+// who is connected and live video stats. The optional Agent API lets local AI agents drive the
+// Mac (Phase 9). See docs/architecture.md.
 
 import AppKit
 import SwiftUI
@@ -13,15 +14,18 @@ import UniformTypeIdentifiers
 final class AppModel: ObservableObject {
     let settings: AppSettings
     let server: ServerController
+    let agents: AgentService
     let windows: WindowManager
 
     init() {
         settings = AppSettings()
         server = ServerController(settings: settings)
-        windows = WindowManager(server: server)
+        agents = AgentService(settings: settings, audit: server.audit, human: server.humanActivity)
+        windows = WindowManager(server: server, agents: agents)
         // When the app is only hosting unit tests, don't touch secrets or bind the port.
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
         server.start()
+        agents.activate()
         if !settings.hasCompletedOnboarding {
             DispatchQueue.main.async { [windows] in windows.show(.setup) }
         }
@@ -49,18 +53,23 @@ struct ClawTankApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            StatusMenu(model: model, server: model.server, settings: model.settings)
+            StatusMenu(model: model, server: model.server, settings: model.settings, agents: model.agents)
         } label: {
-            MenuBarIcon(server: model.server)
+            MenuBarIcon(server: model.server, agents: model.agents)
         }
     }
 }
 
 private struct MenuBarIcon: View {
     @ObservedObject var server: ServerController
+    @ObservedObject var agents: AgentService
     var body: some View {
-        Image(systemName: server.menuBarSymbol)
-            .accessibilityLabel("ClawTank: \(server.statusText)")
+        if let agent = agents.activeAgent {
+            Image(systemName: "cursorarrow.rays").accessibilityLabel("ClawTank: agent \(agent) is in control")
+        } else {
+            Image(systemName: server.menuBarSymbol)
+                .accessibilityLabel("ClawTank: \(server.statusText)")
+        }
     }
 }
 
@@ -68,9 +77,14 @@ struct StatusMenu: View {
     let model: AppModel
     @ObservedObject var server: ServerController
     @ObservedObject var settings: AppSettings
+    @ObservedObject var agents: AgentService
 
     var body: some View {
         Text(server.statusText)
+        if let agent = agents.activeAgent {
+            Text("Agent “\(agent)” is in control" + (agents.lastAction.map { ": \($0)" } ?? ""))
+            Button("Stop Agents") { agents.stopAgents() }
+        }
         if let session = server.session {
             Text("From \(session.peer) since \(session.since.formatted(date: .omitted, time: .shortened))")
             if let display = server.displayDescription { Text(display) }
