@@ -77,6 +77,9 @@ struct StatusMenu: View {
             if let video = server.videoStatus { Text(video) }
             Button("Disconnect \(session.peer)") { server.disconnectClient() }
         }
+        if server.screenLocked {
+            Text("This Mac is locked: remote clients see only the wallpaper until it's unlocked")
+        }
         if let notice = server.lastNotice {
             Text(notice)
         }

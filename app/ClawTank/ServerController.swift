@@ -43,6 +43,9 @@ final class ServerController: ObservableObject {
     @Published private(set) var videoStatus: String?
     /// e.g. "Virtual display 1512×982" while streaming.
     @Published private(set) var displayDescription: String?
+    /// The Mac's screen is locked: a remote user sees only the wallpaper (macOS hides the lock
+    /// screen from capture and blocks synthetic input there; see ADR-018).
+    @Published private(set) var screenLocked = false
 
     let settings: AppSettings
     let audit: AuditLog
@@ -76,6 +79,13 @@ final class ServerController: ObservableObject {
         overlayFlag.set(settings.showsStatsOverlay)
         settings.$showsStatsOverlay.sink { [overlayFlag] in overlayFlag.set($0) }.store(in: &subscriptions)
         settings.$swapControlCommand.sink { [input] in input.setSwapControlCommand($0) }.store(in: &subscriptions)
+        let center = DistributedNotificationCenter.default()
+        center.publisher(for: Notification.Name("com.apple.screenIsLocked"))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.setScreenLocked(true) }.store(in: &subscriptions)
+        center.publisher(for: Notification.Name("com.apple.screenIsUnlocked"))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.setScreenLocked(false) }.store(in: &subscriptions)
         settings.$keepAwake.sink { [weak self] keep in
             guard let self, session != nil else { return }
             if keep { _ = power.begin(reason: "ClawTank remote session") } else { power.end() }
@@ -215,18 +225,17 @@ final class ServerController: ObservableObject {
         }
     }
 
-    nonisolated static func describeRefusal(_ reason: String, ip: String) -> String {
-        switch reason {
-        case "lan-only": "Blocked \(ip): not on your local network"
-        case "allowlist": "Blocked \(ip): not on the allowlist"
-        case "locked-out": "Blocked \(ip): locked out after failed logins"
-        default: "Blocked \(ip)"
-        }
+    private func record(_ outcome: AuditEntry.Outcome, _ ip: String, detail: String? = nil) {
+        // Only sessions prove which account was used; the core never learns the username of a
+        // failed attempt, so don't imply one.
+        let user: String? = outcome == .connected || outcome == .disconnected ? username : nil
+        audit.append(AuditEntry(time: Date(), peer: ip, user: user, outcome: outcome,
+                                detail: detail.map(Self.friendlyDetail)))
     }
 
-    private func record(_ outcome: AuditEntry.Outcome, _ ip: String, detail: String? = nil) {
-        let user: String? = outcome == .refused || outcome == .lockedOut ? nil : username
-        audit.append(AuditEntry(time: Date(), peer: ip, user: user, outcome: outcome, detail: detail))
+    private func setScreenLocked(_ locked: Bool) {
+        screenLocked = locked
+        log.notice("Screen \(locked ? "locked" : "unlocked", privacy: .public)")
     }
 
     private func endSession() {
@@ -272,22 +281,6 @@ final class ServerController: ObservableObject {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    /// "192.168.1.5:51234" → "192.168.1.5"; "[fe80::1]:5" → "fe80::1".
-    nonisolated static func ipOnly(_ peer: String) -> String {
-        if peer.hasPrefix("["), let end = peer.firstIndex(of: "]") {
-            return String(peer[peer.index(after: peer.startIndex)..<end])
-        }
-        guard peer.filter({ $0 == ":" }).count == 1, let colon = peer.lastIndex(of: ":") else { return peer }
-        return String(peer[..<colon])
-    }
-
-    /// The Bonjour name clients can use, e.g. "macmini.local".
-    nonisolated static func localHostName() -> String {
-        if let name = SCDynamicStoreCopyLocalHostName(nil) as String? {
-            return "\(name).local"
-        }
-        return ProcessInfo.processInfo.hostName
-    }
 }
 
 // Video lifecycle (same file, so it keeps access to the controller's private state).
@@ -380,12 +373,4 @@ extension ServerController {
         videoStatus = text
         video.setOverlayText(text)
     }
-
-    nonisolated static func formatVideoStats(fps: Int, bytesPerSecond: Int, encodeMs: Double, skipped: Int) -> String {
-        let mbit = Double(bytesPerSecond * 8) / 1_000_000
-        var text = String(format: "%d fps · %.1f Mbit/s · enc %.1f ms", fps, mbit, encodeMs)
-        if skipped > 0 { text += " · \(skipped) skipped" }
-        return text
-    }
-
 }

@@ -96,6 +96,14 @@ final class ServerControllerTests: XCTestCase {
         XCTAssertEqual(controller.password, "correct horse battery")
     }
 
+    func testFriendlyDetails() {
+        XCTAssertEqual(ServerController.friendlyDetail("custom error: LogonDenied: no candidate credential matched"),
+                       "Wrong username or password")
+        XCTAssertEqual(ServerController.friendlyDetail("peer closed connection without sending TLS close_notify"),
+                       "Client closed the connection")
+        XCTAssertEqual(ServerController.friendlyDetail("short reason"), "short reason")
+    }
+
     func testRefusalDescriptions() {
         XCTAssertTrue(ServerController.describeRefusal("lan-only", ip: "8.8.8.8").contains("local network"))
         XCTAssertTrue(ServerController.describeRefusal("locked-out", ip: "1.2.3.4").contains("locked out"))
