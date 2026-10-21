@@ -34,7 +34,7 @@ async fn submitted_h264_reaches_an_egfx_client() {
         username: USER.to_owned(),
         password: PASSWORD.to_owned(),
         identity: TlsIdentity::generate("video-test.local").unwrap(),
-        lan_only: true,
+        policy: clawtank_core::access::AccessPolicy::lan_only(),
     };
     let server = server::start(
         config,

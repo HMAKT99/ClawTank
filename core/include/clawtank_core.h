@@ -64,7 +64,8 @@ typedef enum {
    */
   CT_EVENT_KIND_LISTENING = 0,
   /**
-   * Peer refused by the LAN-only policy. Detail: `"ip:port"`.
+   * Peer refused before the handshake. Detail: `"ip:port\nreason"` (`lan-only`, `allowlist`,
+   * `locked-out`).
    */
   CT_EVENT_KIND_REJECTED = 1,
   /**
@@ -99,6 +100,10 @@ typedef enum {
    * Client resized: restart capture + encode. Detail: `"WIDTHxHEIGHT@SCALE"` (scale in %).
    */
   CT_EVENT_KIND_VIDEO_RESIZE = 9,
+  /**
+   * Repeated failed logins locked out an IP. Detail: `"ip\nminutes"`.
+   */
+  CT_EVENT_KIND_LOCKED_OUT = 10,
 } CtEventKind;
 
 /**
@@ -205,6 +210,11 @@ typedef struct {
    * Refuse peers outside local/private address ranges.
    */
   bool lan_only;
+  /**
+   * Optional allowlist: comma-separated IPs/CIDRs (`"192.168.1.0/24, 10.0.0.5"`); null or
+   * empty means no allowlist.
+   */
+  const char *allowlist;
 } CtServerConfig;
 
 /**
@@ -367,6 +377,25 @@ bool ct_server_set_pointer(const CtServer *server,
                            uint16_t height,
                            uint16_t hot_x,
                            uint16_t hot_y);
+
+/**
+ * Ends the current client session (the server keeps listening). Returns false if no client
+ * was in session.
+ *
+ * # Safety
+ * `server` must be null or a live pointer from `ct_server_start`.
+ */
+bool ct_server_disconnect_client(const CtServer *server);
+
+/**
+ * Replaces the NLA username/password for future connections (no restart).
+ *
+ * # Safety
+ * `server` must be a live pointer from `ct_server_start`; strings must be valid C strings.
+ */
+CtStatus ct_server_set_credentials(const CtServer *server,
+                                   const char *username,
+                                   const char *password);
 
 /**
  * Hides the client-side cursor.

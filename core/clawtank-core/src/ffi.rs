@@ -14,6 +14,7 @@ use std::sync::{Arc, OnceLock};
 
 use tracing::Level;
 
+use crate::access::{AccessPolicy, IpNet};
 use crate::events::CoreEvent;
 use crate::input::InputEvent;
 use crate::server::{self, ServerConfig, ServerHandle};
@@ -44,7 +45,8 @@ pub enum CtStatus {
 pub enum CtEventKind {
     /// Listener bound. Detail: `"ip:port"`.
     Listening = 0,
-    /// Peer refused by the LAN-only policy. Detail: `"ip:port"`.
+    /// Peer refused before the handshake. Detail: `"ip:port\nreason"` (`lan-only`, `allowlist`,
+    /// `locked-out`).
     Rejected = 1,
     /// Client authenticated; session started. Detail: `"ip:port"`.
     ClientConnected = 2,
@@ -62,6 +64,8 @@ pub enum CtEventKind {
     VideoStop = 8,
     /// Client resized: restart capture + encode. Detail: `"WIDTHxHEIGHT@SCALE"` (scale in %).
     VideoResize = 9,
+    /// Repeated failed logins locked out an IP. Detail: `"ip\nminutes"`.
+    LockedOut = 10,
 }
 
 /// Result of `ct_server_submit_h264`.
@@ -250,6 +254,9 @@ pub struct CtServerConfig {
     pub key_der_len: usize,
     /// Refuse peers outside local/private address ranges.
     pub lan_only: bool,
+    /// Optional allowlist: comma-separated IPs/CIDRs (`"192.168.1.0/24, 10.0.0.5"`); null or
+    /// empty means no allowlist.
+    pub allowlist: *const c_char,
 }
 
 /// Opaque running server.
@@ -452,6 +459,11 @@ unsafe fn server_start(
         return Err(CtStatus::InvalidArgument);
     }
     let ip: IpAddr = ip.parse().map_err(|_| CtStatus::InvalidArgument)?;
+    // SAFETY: caller guarantees `allowlist` is null or a valid C string.
+    let allowlist = match unsafe { opt_str(c.allowlist) }? {
+        Some(text) => IpNet::parse_list(text).ok_or(CtStatus::InvalidArgument)?,
+        None => Vec::new(),
+    };
     // SAFETY: caller guarantees the buffers are readable for the given lengths.
     let (cert, key) = unsafe {
         (
@@ -471,7 +483,10 @@ unsafe fn server_start(
             cert_der: cert.to_vec(),
             key_pkcs8_der: key.to_vec(),
         },
-        lan_only: c.lan_only,
+        policy: AccessPolicy {
+            lan_only: c.lan_only,
+            allowlist,
+        },
     };
     if config.identity.acceptor().is_err() || config.identity.public_key().is_err() {
         return Err(CtStatus::TlsError);
@@ -594,6 +609,44 @@ pub unsafe extern "C" fn ct_server_set_pointer(
         .set(data, width, height, hot_x, hot_y)
 }
 
+/// Ends the current client session (the server keeps listening). Returns false if no client
+/// was in session.
+///
+/// # Safety
+/// `server` must be null or a live pointer from `ct_server_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_server_disconnect_client(server: *const CtServer) -> bool {
+    // SAFETY: null or live per the contract.
+    unsafe { server.as_ref() }.is_some_and(|s| s.handle.disconnect_client())
+}
+
+/// Replaces the NLA username/password for future connections (no restart).
+///
+/// # Safety
+/// `server` must be a live pointer from `ct_server_start`; strings must be valid C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_server_set_credentials(
+    server: *const CtServer,
+    username: *const c_char,
+    password: *const c_char,
+) -> CtStatus {
+    // SAFETY: caller guarantees validity (nulls are rejected).
+    let (Some(server), Ok(user), Ok(pass)) = (
+        unsafe { server.as_ref() },
+        unsafe { req_str(username) },
+        unsafe { req_str(password) },
+    ) else {
+        return CtStatus::InvalidArgument;
+    };
+    if user.is_empty() || pass.is_empty() {
+        return CtStatus::InvalidArgument;
+    }
+    server
+        .handle
+        .set_credentials(user.to_owned(), pass.to_owned());
+    CtStatus::Ok
+}
+
 /// Hides the client-side cursor.
 ///
 /// # Safety
@@ -652,7 +705,13 @@ fn event_to_c(event: &CoreEvent) -> (CtEventKind, String) {
             format!("{width}x{height}@{scale_percent}"),
         ),
         CoreEvent::Listening(a) => (CtEventKind::Listening, a.to_string()),
-        CoreEvent::Rejected(a) => (CtEventKind::Rejected, a.to_string()),
+        CoreEvent::Rejected { peer, reason } => (
+            CtEventKind::Rejected,
+            format!("{peer}\n{}", reason.as_str()),
+        ),
+        CoreEvent::LockedOut { ip, minutes } => {
+            (CtEventKind::LockedOut, format!("{ip}\n{minutes}"))
+        }
         CoreEvent::ClientConnected(a) => (CtEventKind::ClientConnected, a.to_string()),
         CoreEvent::ClientDisconnected { peer, error: None } => {
             (CtEventKind::ClientDisconnected, peer.to_string())
@@ -728,6 +787,11 @@ mod tests {
             assert!(ct_server_start(null(), None, None, null_mut(), &mut status).is_null());
             assert!(!ct_server_set_pointer(null(), null(), 0, 1, 1, 0, 0));
             ct_server_hide_pointer(null());
+            assert!(!ct_server_disconnect_client(null()));
+            assert_eq!(
+                ct_server_set_credentials(null(), null(), null()),
+                CtStatus::InvalidArgument
+            );
             assert_eq!(status, CtStatus::InvalidArgument);
             assert_eq!(
                 ct_generate_tls_identity(null(), null_mut(), null_mut()),

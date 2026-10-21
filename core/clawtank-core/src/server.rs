@@ -18,7 +18,7 @@ use tokio::sync::{mpsc::UnboundedSender, watch};
 use tracing::{error, info, warn};
 
 use crate::Result;
-use crate::access::SessionTracker;
+use crate::access::{AccessPolicy, SessionTracker};
 use crate::display::TestPatternDisplay;
 use crate::events::{CoreEvent, EventSink};
 use crate::gfx::GfxFactory;
@@ -35,8 +35,8 @@ pub struct ServerConfig {
     pub username: String,
     pub password: String,
     pub identity: TlsIdentity,
-    /// Refuse peers outside loopback/private/link-local/CGNAT ranges.
-    pub lan_only: bool,
+    /// Who may connect (LAN-only, allowlist); lockout is always on.
+    pub policy: AccessPolicy,
 }
 
 /// A running server. Dropping it stops the server.
@@ -49,9 +49,31 @@ pub struct ServerHandle {
     local_addr: SocketAddr,
     video: Arc<VideoHub>,
     pointer: Arc<PointerHub>,
+    tracker: Arc<SessionTracker>,
+    credentials: watch::Sender<Credentials>,
 }
 
 impl ServerHandle {
+    /// Ends the current session, if any; the server keeps listening.
+    pub fn disconnect_client(&self) -> bool {
+        // Only with a live session: a Quit queued while idle would end the *next* session.
+        if !self.tracker.in_session() {
+            return false;
+        }
+        self.quit
+            .send(ServerEvent::Quit("disconnected by host".to_owned()))
+            .is_ok()
+    }
+
+    /// Replaces the NLA credentials; takes effect for the next connection.
+    pub fn set_credentials(&self, username: String, password: String) {
+        let _ = self.credentials.send(Credentials {
+            username,
+            password,
+            domain: None,
+        });
+    }
+
     /// Where the host publishes cursor shapes.
     pub fn pointer(&self) -> &Arc<PointerHub> {
         &self.pointer
@@ -107,7 +129,8 @@ pub fn start(config: ServerConfig, sink: EventSink, input: InputSink) -> Result<
         .enable_all()
         .build()?;
 
-    let tracker = Arc::new(SessionTracker::new(config.lan_only, sink.clone()));
+    let tracker = Arc::new(SessionTracker::new(config.policy, sink.clone()));
+    let handle_tracker = Arc::clone(&tracker);
     let video = Arc::new(VideoHub::new(sink.clone()));
     let pointer = Arc::new(PointerHub::default());
     let thread_pointer = Arc::clone(&pointer);
@@ -115,11 +138,12 @@ pub fn start(config: ServerConfig, sink: EventSink, input: InputSink) -> Result<
     let (shutdown, mut shutdown_rx) = watch::channel(false);
     // RdpServer is not Send, so it is built on the server thread; its quit sender comes back here.
     let (quit_tx, quit_rx) = std::sync::mpsc::sync_channel(1);
-    let credentials = Credentials {
+    // The latest credentials; applied before each new connection (live password change).
+    let (credentials_tx, mut credentials_rx) = watch::channel(Credentials {
         username: config.username,
         password: config.password,
         domain: None,
-    };
+    });
 
     let thread = std::thread::Builder::new()
         .name("clawtank-rdp".to_owned())
@@ -136,7 +160,7 @@ pub fn start(config: ServerConfig, sink: EventSink, input: InputSink) -> Result<
                 .with_honor_client_desktop_size(true)
                 .with_gfx_factory(Some(Box::new(GfxFactory::new(Arc::clone(&thread_video)))))
                 .build();
-            server.set_credentials(Some(credentials));
+            server.set_credentials(Some(credentials_rx.borrow_and_update().clone()));
             let _ = quit_tx.send(server.event_sender().clone());
 
             runtime.block_on(async move {
@@ -167,6 +191,10 @@ pub fn start(config: ServerConfig, sink: EventSink, input: InputSink) -> Result<
                     if !tracker.accept(peer) {
                         continue;
                     }
+                    if credentials_rx.has_changed().unwrap_or(false) {
+                        server.set_credentials(Some(credentials_rx.borrow_and_update().clone()));
+                        info!("Applied new credentials");
+                    }
                     if let Err(e) = stream.set_nodelay(true) {
                         warn!(%peer, error = %e, "TCP_NODELAY failed; latency may suffer");
                     }
@@ -194,5 +222,7 @@ pub fn start(config: ServerConfig, sink: EventSink, input: InputSink) -> Result<
         local_addr,
         video,
         pointer,
+        tracker: handle_tracker,
+        credentials: credentials_tx,
     })
 }

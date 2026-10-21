@@ -45,14 +45,20 @@ fn main() -> clawtank_core::Result<()> {
         username: user,
         password,
         identity,
-        lan_only,
+        policy: clawtank_core::access::AccessPolicy {
+            lan_only,
+            allowlist: Vec::new(),
+        },
     };
     let _server = server::start(
         config,
         Arc::new(|event| {
             let line = match event {
                 CoreEvent::Listening(a) => format!("listening {a}"),
-                CoreEvent::Rejected(a) => format!("rejected {a}"),
+                CoreEvent::Rejected { peer, reason } => {
+                    format!("rejected {peer} {}", reason.as_str())
+                }
+                CoreEvent::LockedOut { ip, minutes } => format!("locked-out {ip} {minutes}min"),
                 CoreEvent::ClientConnected(a) => format!("connected {a}"),
                 CoreEvent::ClientDisconnected { peer, error } => {
                     format!("disconnected {peer} {error:?}")

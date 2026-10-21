@@ -29,7 +29,7 @@ fn start_server(bind: SocketAddr) -> (ServerHandle, Events, TlsIdentity) {
         username: USER.to_owned(),
         password: PASSWORD.to_owned(),
         identity: identity.clone(),
-        lan_only: true,
+        policy: clawtank_core::access::AccessPolicy::lan_only(),
     };
     let handle = server::start(
         config,

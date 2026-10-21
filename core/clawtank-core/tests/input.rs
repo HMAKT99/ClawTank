@@ -43,7 +43,7 @@ async fn client_input_reaches_host_and_cursor_reaches_client() {
         username: USER.to_owned(),
         password: PASSWORD.to_owned(),
         identity: TlsIdentity::generate("input-test.local").unwrap(),
-        lan_only: true,
+        policy: clawtank_core::access::AccessPolicy::lan_only(),
     };
     let server = server::start(
         config,

@@ -31,7 +31,7 @@ async fn display_control_resize_restarts_the_surface() {
         username: "tester".to_owned(),
         password: "resize-test-password".to_owned(),
         identity: TlsIdentity::generate("resize-test.local").unwrap(),
-        lan_only: true,
+        policy: clawtank_core::access::AccessPolicy::lan_only(),
     };
     let server = server::start(
         config,

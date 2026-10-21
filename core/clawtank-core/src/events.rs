@@ -1,6 +1,6 @@
 //! Events the core reports to the host app (connection lifecycle, server state).
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 /// Something the host app should know about. Delivered on the core's network thread.
@@ -9,7 +9,12 @@ pub enum CoreEvent {
     /// The listener is bound and accepting connections.
     Listening(SocketAddr),
     /// A peer was refused by the access policy before any handshake.
-    Rejected(SocketAddr),
+    Rejected {
+        peer: SocketAddr,
+        reason: RejectReason,
+    },
+    /// Repeated failed logins: `ip` is refused for `minutes`.
+    LockedOut { ip: IpAddr, minutes: u32 },
     /// A client finished TLS + NLA and the session started.
     ClientConnected(SocketAddr),
     /// A connected client's session ended (`error` is `None` for a clean disconnect).
@@ -34,6 +39,27 @@ pub enum CoreEvent {
     Stopped,
     /// The server loop failed.
     Error(String),
+}
+
+/// Why a peer was refused before the handshake.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RejectReason {
+    /// Not a local/private address and LAN-only is on.
+    LanOnly,
+    /// An allowlist is configured and the address isn't on it.
+    NotAllowlisted,
+    /// Too many recent failed logins from this address.
+    LockedOut,
+}
+
+impl RejectReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LanOnly => "lan-only",
+            Self::NotAllowlisted => "allowlist",
+            Self::LockedOut => "locked-out",
+        }
+    }
 }
 
 /// Callback receiving [`CoreEvent`]s.
