@@ -13,11 +13,12 @@ final class SessionMedia {
     private let localMute = LocalMute()
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "media")
 
-    init(server: RdpServer, settings: AppSettings, onTransferStatus: @escaping (String?) -> Void = { _ in }) {
+    init(server: RdpServer, settings: AppSettings, fileServer: FileServer? = nil,
+         onTransferStatus: @escaping (String?) -> Void = { _ in }) {
         self.server = server
         self.settings = settings
         if settings.clipboardEnabled {
-            let service = ClipboardService(server: server)
+            let service = ClipboardService(server: server, fileServer: fileServer)
             service.onTransferStatus = onTransferStatus
             service.start()
             clipboard = service

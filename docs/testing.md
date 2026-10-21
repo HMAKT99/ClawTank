@@ -67,3 +67,11 @@ Live, 2026-10-21 (`probe … --audio 5` while `afplay Ping.aiff` played):
 - ✅ Found and fixed: silence was streamed at 1.5 Mbit/s. Pure digital silence is now skipped, so it measures **0 kbit/s**.
 - [ ] Human (Windows App / mstsc): YouTube audio plays in sync on the client; "Mute this Mac while connected" silences the Mac's speakers but not the client.
 - [ ] Human: copy and paste both ways for plain text, rich text (TextEdit ↔ WordPad/Word), HTML (Safari ↔ Edge), and images (Preview ↔ Paint).
+
+## Phase 7 — file and folder copy
+Automated: Rust end-to-end test of files both ways (folders, size query, byte range); an ignored core-only throughput test (`cargo test --release --test file_throughput -- --ignored`) gave **1.2 ms per 1 MiB request, about 811 MB/s**. Swift tests cover path sanitizing (traversal rejected), folder flattening and range serving.
+Live, 2026-10-21, loopback, `files_demo` (examples/files_demo.rs) acting as the client:
+- ✅ **Client → Mac, 1 GiB folder** (2 × 512 MiB): 4.9 s (207 MB/s). SHA-256 of both files on disk matched what the client served.
+- ✅ **Mac → client, 1 GiB folder** (nested folder plus 3 files, copied in Finder via the clipboard): 4.2 s (244 MB/s). All SHA-256 hashes matched the source.
+- Found and fixed: relative paths doubled under symlinked folders. File requests are now served off the main thread. (An apparent 23 ms per request turned out to be the demo client's own loop.)
+- [ ] Human: mstsc / Windows App: copy a folder in Finder and paste it in Explorer, and the reverse (it lands in ~/Downloads/ClawTank and is put on the clipboard). Large copy on Wi-Fi.

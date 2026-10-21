@@ -67,6 +67,8 @@ final class ServerController: ObservableObject {
     private let input: InputPipeline
     private var cursor: CursorPublisher?
     private var media: SessionMedia?
+    /// Answers file-contents requests on its own queue, straight from the core's thread.
+    private let fileServer = FileServer()
     private var subscriptions: Set<AnyCancellable> = []
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "server")
 
@@ -109,9 +111,17 @@ final class ServerController: ObservableObject {
                 port: port, username: username, password: password, identity: identity,
                 lanOnly: settings.lanOnly, allowlist: settings.allowlist)
             let input = self.input
-            server = try RdpServer(configuration: configuration, onEvent: { [weak self] event in
+            let fileServer = self.fileServer
+            let created = try RdpServer(configuration: configuration, onEvent: { [weak self] event in
+                // Hot path during file copies: answer on the file queue, not the main thread.
+                if case .clipboardFileRequested(let stream, let index, let query) = event {
+                    fileServer.serve(stream: stream, index: index, query: query)
+                    return
+                }
                 Task { @MainActor in self?.handle(event) }
             }, onInput: { input.handle($0) })
+            fileServer.attach(created)
+            server = created
             status = .listening(port: server?.port ?? port)
             lastNotice = nil
             log.info("Server started on port \(self.port) lanOnly=\(self.settings.lanOnly)")
@@ -158,10 +168,6 @@ final class ServerController: ObservableObject {
         }
         return []
     }
-
-    func copyPassword() { copyToPasteboard(password) }
-    func copyFingerprint() { copyToPasteboard(fingerprint) }
-    func copyAddress() { copyToPasteboard(address) }
 
     // MARK: - Events
 
@@ -248,7 +254,9 @@ final class ServerController: ObservableObject {
         if settings.keepAwake { _ = power.begin(reason: "ClawTank remote session") }
         startInput()
         if let server {
-            media = SessionMedia(server: server, settings: settings) { [weak self] in self?.transferStatus = $0 }
+            media = SessionMedia(server: server, settings: settings, fileServer: fileServer) { [weak self] in
+                self?.transferStatus = $0
+            }
         }
     }
 
@@ -290,11 +298,6 @@ final class ServerController: ObservableObject {
         server?.stop()
         server = nil
         status = .failed(message)
-    }
-
-    private func copyToPasteboard(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 
 }

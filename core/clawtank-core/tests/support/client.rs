@@ -174,6 +174,8 @@ pub async fn connect_with_channels(
 ) -> anyhow::Result<(ConnectionResult, Session, Vec<u8>)> {
     let server_name = "clawtank-server";
     let tcp = TcpStream::connect(addr).await?;
+    // Like real RDP clients: small PDUs (input, file-range requests) must not wait for Nagle.
+    tcp.set_nodelay(true)?;
     let client_addr = tcp.local_addr()?;
     let mut framed = ironrdp_tokio::TokioFramed::new(tcp);
     let mut connector = ClientConnector::new(config, client_addr);

@@ -69,6 +69,58 @@ struct LocalFileList {
     }
 }
 
+/// Serves the client's file-contents requests off the main thread (they arrive on the core's
+/// thread at high rate during a copy), keeping the current file open between chunks.
+final class FileServer: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "dev.clawtank.files", qos: .userInitiated)
+    private let lock = NSLock()
+    private var list: LocalFileList?
+    private var open: (index: Int, handle: FileHandle)?
+    private weak var server: RdpServer?
+
+    /// The server to answer through (set once it exists).
+    func attach(_ server: RdpServer) {
+        lock.withLock { self.server = server }
+    }
+
+    func setList(_ list: LocalFileList?) {
+        lock.withLock {
+            self.list = list
+            try? open?.handle.close()
+            open = nil
+        }
+    }
+
+    func serve(stream: UInt32, index: Int, query: RdpServer.FileQuery) {
+        queue.async { [self] in
+            let answer = answer(index: index, query: query)
+            lock.withLock { server }?.clipboardAnswerFile(stream: stream, answer)
+        }
+    }
+
+    private func answer(index: Int, query: RdpServer.FileQuery) -> RdpServer.FileAnswer {
+        lock.withLock {
+            guard let list, list.entries.indices.contains(index), let url = list.urls[index] else { return .error }
+            switch query {
+            case .size:
+                return .size(list.entries[index].size)
+            case .range(let position, let length):
+                if open?.index != index {
+                    try? open?.handle.close()
+                    open = (try? FileHandle(forReadingFrom: url)).map { (index, $0) }
+                }
+                guard let handle = open?.handle else { return .error }
+                do {
+                    try handle.seek(toOffset: position)
+                    return .data(try handle.read(upToCount: min(length, 16 << 20)) ?? Data())
+                } catch {
+                    return .error
+                }
+            }
+        }
+    }
+}
+
 enum TransferPaths {
     /// A safe relative path inside the download folder, or nil if the remote path is unusable.
     static func sanitize(_ remote: String) -> String? {

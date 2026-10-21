@@ -28,8 +28,11 @@ final class ClipboardService {
     static let fileListName = "FileGroupDescriptorW"
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "clipboard")
 
-    init(server: RdpServer, pasteboard: NSPasteboard = .general) {
+    private let fileServer: FileServer?
+
+    init(server: RdpServer, pasteboard: NSPasteboard = .general, fileServer: FileServer? = nil) {
         self.server = server
+        self.fileServer = fileServer
         self.pasteboard = pasteboard
         self.lastSeenChange = pasteboard.changeCount
     }
@@ -43,6 +46,7 @@ final class ClipboardService {
     func stop() {
         receiver = nil
         localFiles = nil
+        fileServer?.setList(nil)
         onTransferStatus(nil)
         timer?.invalidate()
         timer = nil
@@ -154,10 +158,12 @@ final class ClipboardService {
         if !fileURLs.isEmpty {
             let list = LocalFileList.build(from: fileURLs)
             localFiles = list
+            fileServer?.setList(list)
             server.clipboardAnnounceFiles(list.entries)
             return
         }
         localFiles = nil
+        fileServer?.setList(nil)
         let types = Set(pasteboard.types ?? [])
         var formats: [RdpServer.ClipboardFormatRef] = []
         if types.contains(.string) { formats.append(.init(id: ClipboardFormats.unicodeText, name: nil)) }

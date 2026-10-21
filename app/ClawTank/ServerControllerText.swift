@@ -1,10 +1,20 @@
 // Pure helpers for ServerController: human wording for core events and errors, peer/host
 // formatting. Static and side-effect free, so they're unit-tested directly.
 
+import AppKit
 import Foundation
 import SystemConfiguration
 
 extension ServerController {
+    func copyPassword() { Self.copyToPasteboard(password) }
+    func copyFingerprint() { Self.copyToPasteboard(fingerprint) }
+    func copyAddress() { Self.copyToPasteboard(address) }
+
+    static func copyToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
     nonisolated static func describeRefusal(_ reason: String, ip: String) -> String {
         switch reason {
         case "lan-only": "Blocked \(ip): not on your local network"
