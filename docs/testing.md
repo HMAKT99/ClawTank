@@ -50,3 +50,12 @@ Results, 2026-10-21, M2 MacBook Air, macOS 15.6.1:
 - Findings: `CGDisplayCopyDisplayMode` is unreliable for virtual displays (often nil), so we use `CGDisplayBounds`. Retina→1× doesn't apply in place, so we recreate.
 - [ ] Human: headless Mac mini (no monitor, no dummy plug) with Display = Automatic. Connect from a 14"/16" MacBook (Windows App, Retina option on) and expect a crisp native-resolution desktop. Resize the client window and expect the desktop to follow within about 1 s.
 - [ ] Human: `make spike-vd` on the Mac mini (Phase 0 item).
+
+## Phase 5 — polished app
+Automated: 44 Swift tests (audit log, rotation, password policy, settings, password change, diagnostics without secrets) and Rust security end-to-end tests (lockout before TLS, live password change, host disconnect).
+Live, 2026-10-21:
+- ✅ Connection log on disk recorded a failed login, then connected and disconnected, with time and address. Wording was improved after this run.
+- ✅ `make package` produces `dist/ClawTank-0.1.0.dmg` (9.8 MB, app plus /Applications link) with a .sha256.
+- ⚠️ Found: with the Mac locked, clients see only the wallpaper (ADR-018). The menu now says so.
+- [ ] Human, the acceptance test: on a fresh macOS user account, open the DMG, drag to Applications, open (Open Anyway), follow setup (Screen Recording, Accessibility, password), then connect from Windows App. Target: under 2 minutes.
+- [ ] Human: Settings window tabs, the LAN-only warning dialog, Start at login (may need approval in Login Items), Export Diagnostics, Disconnect from the menu, VoiceOver labels.

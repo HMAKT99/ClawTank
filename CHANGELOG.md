@@ -4,6 +4,22 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Phase 5 — Polished app (2026-10-21)
+- First-run setup window: what ClawTank does, Screen Recording and Accessibility (detected live), choosing a password, and how to connect from Windows, Mac, iPad/iPhone and Linux.
+- Menu shows the connected client (address, since when, display, live stats) with Disconnect, plus Start/Stop sharing, Settings, Connection Log, Setup Guide and Export Diagnostics.
+- Settings:
+  - start at login; keep awake while connected (default on)
+  - Ctrl↔⌘ swap; stats overlay
+  - display mode, max fps and quality preset
+  - password change with strength rules
+  - LAN-only (with a warning before turning it off), allowlist of IPs/CIDRs, port
+- Security:
+  - 5 failed logins in 5 minutes lock the IP out for 5 minutes, enforced before TLS
+  - refusal reasons are reported
+  - the password changes live without a restart
+- Connection log (audit) of every attempt, rotated at 1 MB, file mode 0600. Diagnostics export (.zip) never reads secrets.
+- Locked-screen detection with a menu notice (ADR-018).
+
 ### Phase 4 — Virtual display and headless (2026-10-21)
 - Virtual display at the client's exact pixel size (Retina/HiDPI when the client is scaled ≥150% or sends a Retina-sized desktop), via the private `CGVirtualDisplay` behind `VirtualDisplayProvider`, with fallback to the physical display.
 - Display setting:
