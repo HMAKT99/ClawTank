@@ -39,7 +39,8 @@ async fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("cannot resolve {addr}"))?;
 
     let started = Instant::now();
-    let (result, mut session, cert) = client::connect(addr, user, &password, width, height).await?;
+    let (result, mut session, cert) =
+        client::connect(addr, user, &password, width, height, None).await?;
     println!("connected: TLS + NLA ok in {:?}", started.elapsed());
     println!(
         "desktop: {}x{}",

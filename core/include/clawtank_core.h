@@ -82,7 +82,33 @@ typedef enum {
    * Server loop failed. Detail: error message.
    */
   CT_EVENT_KIND_ERROR = 6,
+  /**
+   * Client graphics pipeline ready: start capture + encode. Detail: `"WIDTHxHEIGHT"`.
+   */
+  CT_EVENT_KIND_VIDEO_START = 7,
+  /**
+   * Graphics pipeline closed: stop capture + encode. Detail: empty.
+   */
+  CT_EVENT_KIND_VIDEO_STOP = 8,
 } CtEventKind;
+
+/**
+ * Result of `ct_server_submit_h264`.
+ */
+typedef enum {
+  /**
+   * Queued to the client.
+   */
+  CT_SUBMIT_RESULT_SENT = 0,
+  /**
+   * No graphics session; nothing sent, nothing owed.
+   */
+  CT_SUBMIT_RESULT_NOT_READY = 1,
+  /**
+   * Not sent; the next submitted frame must be a keyframe (IDR).
+   */
+  CT_SUBMIT_RESULT_NEED_KEYFRAME = 2,
+} CtSubmitResult;
 
 /**
  * Opaque running server.
@@ -142,6 +168,17 @@ typedef struct {
  * Receives server events. `detail` is a NUL-terminated UTF-8 string valid only for the call.
  */
 typedef void (*CtEventCallback)(void *ctx, CtEventKind kind, const char *detail);
+
+/**
+ * Video counters for the current session.
+ */
+typedef struct {
+  uint64_t frames_sent;
+  uint64_t bytes_sent;
+  uint64_t frames_dropped;
+  uint64_t frames_acked;
+  uint32_t frames_in_flight;
+} CtVideoStats;
 
 #ifdef __cplusplus
 extern "C" {
@@ -232,6 +269,37 @@ void ct_server_stop(CtServer *server);
  * `server` must be null or a live pointer from `ct_server_start`.
  */
 uint16_t ct_server_port(const CtServer *server);
+
+/**
+ * Submits one H.264 access unit (Annex-B byte stream; keyframes must carry SPS/PPS).
+ * The bytes are copied before returning. Thread-safe; never blocks on the network.
+ * Must not be called from inside the event callback.
+ *
+ * # Safety
+ * `server` must be a live pointer from `ct_server_start`; `data` must point to `len`
+ * readable bytes.
+ */
+CtSubmitResult ct_server_submit_h264(const CtServer *server,
+                                     const uint8_t *data,
+                                     size_t len,
+                                     bool keyframe);
+
+/**
+ * True if a frame submitted now would be sent (session ready, no backpressure). Lets the
+ * host skip encoding work it would only throw away.
+ *
+ * # Safety
+ * `server` must be null or a live pointer from `ct_server_start`.
+ */
+bool ct_server_video_can_accept(const CtServer *server);
+
+/**
+ * Video counters for the current session (zeros for a null server).
+ *
+ * # Safety
+ * `server` must be null or a live pointer from `ct_server_start`.
+ */
+CtVideoStats ct_server_video_stats(const CtServer *server);
 
 #ifdef __cplusplus
 }  // extern "C"

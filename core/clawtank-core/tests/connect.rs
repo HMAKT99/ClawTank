@@ -57,7 +57,7 @@ async fn nla_client_receives_test_frame_and_disconnects() {
     })
     .await;
 
-    let (result, mut session, cert) = client::connect(addr, USER, PASSWORD, WIDTH, HEIGHT)
+    let (result, mut session, cert) = client::connect(addr, USER, PASSWORD, WIDTH, HEIGHT, None)
         .await
         .expect("NLA connection");
     assert_eq!(
@@ -91,7 +91,7 @@ async fn wrong_password_is_refused() {
     let (server, events, _) = start_server("127.0.0.1:0".parse().unwrap());
     let addr = server.local_addr();
 
-    let attempt = client::connect(addr, USER, "wrong password", WIDTH, HEIGHT).await;
+    let attempt = client::connect(addr, USER, "wrong password", WIDTH, HEIGHT, None).await;
     assert!(attempt.is_err(), "bad password must fail NLA");
     wait_for(&events, "ConnectionFailed", |e| {
         matches!(e, CoreEvent::ConnectionFailed { .. })

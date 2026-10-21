@@ -17,6 +17,7 @@ use tracing::Level;
 use crate::events::CoreEvent;
 use crate::server::{self, ServerConfig, ServerHandle};
 use crate::tls::TlsIdentity;
+use crate::video::SubmitResult;
 
 /// Result code for FFI calls.
 #[repr(C)]
@@ -54,6 +55,33 @@ pub enum CtEventKind {
     Stopped = 5,
     /// Server loop failed. Detail: error message.
     Error = 6,
+    /// Client graphics pipeline ready: start capture + encode. Detail: `"WIDTHxHEIGHT"`.
+    VideoStart = 7,
+    /// Graphics pipeline closed: stop capture + encode. Detail: empty.
+    VideoStop = 8,
+}
+
+/// Result of `ct_server_submit_h264`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CtSubmitResult {
+    /// Queued to the client.
+    Sent = 0,
+    /// No graphics session; nothing sent, nothing owed.
+    NotReady = 1,
+    /// Not sent; the next submitted frame must be a keyframe (IDR).
+    NeedKeyframe = 2,
+}
+
+/// Video counters for the current session.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CtVideoStats {
+    pub frames_sent: u64,
+    pub bytes_sent: u64,
+    pub frames_dropped: u64,
+    pub frames_acked: u64,
+    pub frames_in_flight: u32,
 }
 
 /// Log severity for [`CtLogCallback`].
@@ -389,8 +417,69 @@ pub unsafe extern "C" fn ct_server_port(server: *const CtServer) -> u16 {
     unsafe { &*server }.handle.local_addr().port()
 }
 
+/// Submits one H.264 access unit (Annex-B byte stream; keyframes must carry SPS/PPS).
+/// The bytes are copied before returning. Thread-safe; never blocks on the network.
+/// Must not be called from inside the event callback.
+///
+/// # Safety
+/// `server` must be a live pointer from `ct_server_start`; `data` must point to `len`
+/// readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_server_submit_h264(
+    server: *const CtServer,
+    data: *const u8,
+    len: usize,
+    keyframe: bool,
+) -> CtSubmitResult {
+    // SAFETY: caller guarantees `data` points to `len` readable bytes.
+    let (Some(server), Some(data)) = (unsafe { server.as_ref() }, unsafe { bytes(data, len) })
+    else {
+        return CtSubmitResult::NotReady;
+    };
+    match server.handle.video().submit_h264(data, keyframe) {
+        SubmitResult::Sent => CtSubmitResult::Sent,
+        SubmitResult::NotReady => CtSubmitResult::NotReady,
+        SubmitResult::NeedKeyframe => CtSubmitResult::NeedKeyframe,
+    }
+}
+
+/// True if a frame submitted now would be sent (session ready, no backpressure). Lets the
+/// host skip encoding work it would only throw away.
+///
+/// # Safety
+/// `server` must be null or a live pointer from `ct_server_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_server_video_can_accept(server: *const CtServer) -> bool {
+    // SAFETY: null or live per the contract.
+    unsafe { server.as_ref() }.is_some_and(|s| s.handle.video().can_accept())
+}
+
+/// Video counters for the current session (zeros for a null server).
+///
+/// # Safety
+/// `server` must be null or a live pointer from `ct_server_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_server_video_stats(server: *const CtServer) -> CtVideoStats {
+    // SAFETY: null or live per the contract.
+    let Some(server) = (unsafe { server.as_ref() }) else {
+        return CtVideoStats::default();
+    };
+    let s = server.handle.video().stats();
+    CtVideoStats {
+        frames_sent: s.frames_sent,
+        bytes_sent: s.bytes_sent,
+        frames_dropped: s.frames_dropped,
+        frames_acked: s.frames_acked,
+        frames_in_flight: s.frames_in_flight,
+    }
+}
+
 fn event_to_c(event: &CoreEvent) -> (CtEventKind, String) {
     match event {
+        CoreEvent::VideoStart { width, height } => {
+            (CtEventKind::VideoStart, format!("{width}x{height}"))
+        }
+        CoreEvent::VideoStop => (CtEventKind::VideoStop, String::new()),
         CoreEvent::Listening(a) => (CtEventKind::Listening, a.to_string()),
         CoreEvent::Rejected(a) => (CtEventKind::Rejected, a.to_string()),
         CoreEvent::ClientConnected(a) => (CtEventKind::ClientConnected, a.to_string()),
@@ -473,6 +562,12 @@ mod tests {
             );
             assert!(ct_tls_fingerprint_sha256(null(), 0).is_null());
             assert_eq!(ct_server_port(null()), 0);
+            assert_eq!(
+                ct_server_submit_h264(null(), null(), 0, true),
+                CtSubmitResult::NotReady
+            );
+            assert!(!ct_server_video_can_accept(null()));
+            assert_eq!(ct_server_video_stats(null()), CtVideoStats::default());
             ct_server_stop(null_mut());
             ct_string_free(null_mut());
             ct_buffer_free(CtBuffer::EMPTY);

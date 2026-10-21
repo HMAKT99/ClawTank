@@ -19,6 +19,10 @@ pub enum CoreEvent {
     },
     /// A connection ended before the session started (bad password, TLS failure, …).
     ConnectionFailed { peer: SocketAddr, error: String },
+    /// The client's graphics pipeline is ready: start capturing/encoding at this size.
+    VideoStart { width: u16, height: u16 },
+    /// The graphics pipeline closed: stop capturing/encoding.
+    VideoStop,
     /// The server loop exited; no more events follow.
     Stopped,
     /// The server loop failed.

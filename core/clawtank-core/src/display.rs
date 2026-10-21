@@ -1,4 +1,5 @@
-//! Phase 1 display source: one static test frame per connection.
+//! Legacy (non-EGFX) display source: one static test frame per connection. With EGFX the
+//! live H.264 stream (see `video.rs`) replaces it as soon as the first frame arrives.
 //!
 //! The frame is sized to the client's requested desktop (clamped) and sent once, so an idle
 //! session costs no bandwidth. Live capture replaces this in Phase 2.
@@ -18,6 +19,7 @@ use tracing::info;
 
 use crate::access::SessionTracker;
 use crate::test_pattern;
+use crate::video::VideoHub;
 
 const DEFAULT_SIZE: DesktopSize = DesktopSize {
     width: 1920,
@@ -33,13 +35,15 @@ const MIN_SIDE: u16 = 200;
 pub struct TestPatternDisplay {
     size: DesktopSize,
     tracker: Arc<SessionTracker>,
+    video: Arc<VideoHub>,
 }
 
 impl TestPatternDisplay {
-    pub fn new(tracker: Arc<SessionTracker>) -> Self {
+    pub fn new(tracker: Arc<SessionTracker>, video: Arc<VideoHub>) -> Self {
         Self {
             size: DEFAULT_SIZE,
             tracker,
+            video,
         }
     }
 }
@@ -59,6 +63,8 @@ impl RdpServerDisplay for TestPatternDisplay {
 
     async fn request_initial_size(&mut self, client_size: DesktopSize) -> DesktopSize {
         self.size = clamp_size(client_size);
+        self.video
+            .set_session_size(self.size.width, self.size.height);
         info!(?client_size, chosen = ?self.size, "Client requested desktop size");
         self.size
     }

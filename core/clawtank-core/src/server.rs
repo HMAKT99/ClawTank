@@ -21,8 +21,10 @@ use crate::Result;
 use crate::access::SessionTracker;
 use crate::display::TestPatternDisplay;
 use crate::events::{CoreEvent, EventSink};
+use crate::gfx::GfxFactory;
 use crate::input::InputLogger;
 use crate::tls::TlsIdentity;
+use crate::video::VideoHub;
 
 /// Everything needed to start a server.
 #[derive(Debug, Clone)]
@@ -44,9 +46,15 @@ pub struct ServerHandle {
     shutdown: watch::Sender<bool>,
     thread: Option<JoinHandle<()>>,
     local_addr: SocketAddr,
+    video: Arc<VideoHub>,
 }
 
 impl ServerHandle {
+    /// Where the host submits encoded video.
+    pub fn video(&self) -> &Arc<VideoHub> {
+        &self.video
+    }
+
     /// The bound listen address (with the real port if `bind` used port 0).
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
@@ -92,6 +100,8 @@ pub fn start(config: ServerConfig, sink: EventSink) -> Result<ServerHandle> {
         .build()?;
 
     let tracker = Arc::new(SessionTracker::new(config.lan_only, sink.clone()));
+    let video = Arc::new(VideoHub::new(sink.clone()));
+    let thread_video = Arc::clone(&video);
     let (shutdown, mut shutdown_rx) = watch::channel(false);
     // RdpServer is not Send, so it is built on the server thread; its quit sender comes back here.
     let (quit_tx, quit_rx) = std::sync::mpsc::sync_channel(1);
@@ -108,8 +118,12 @@ pub fn start(config: ServerConfig, sink: EventSink) -> Result<ServerHandle> {
                 .with_addr(local_addr)
                 .with_hybrid(acceptor, public_key)
                 .with_input_handler(InputLogger::default())
-                .with_display_handler(TestPatternDisplay::new(Arc::clone(&tracker)))
+                .with_display_handler(TestPatternDisplay::new(
+                    Arc::clone(&tracker),
+                    Arc::clone(&thread_video),
+                ))
                 .with_honor_client_desktop_size(true)
+                .with_gfx_factory(Some(Box::new(GfxFactory::new(Arc::clone(&thread_video)))))
                 .build();
             server.set_credentials(Some(credentials));
             let _ = quit_tx.send(server.event_sender().clone());
@@ -146,6 +160,7 @@ pub fn start(config: ServerConfig, sink: EventSink) -> Result<ServerHandle> {
                         warn!(%peer, error = %e, "TCP_NODELAY failed; latency may suffer");
                     }
                     let result = server.run_connection(stream).await;
+                    thread_video.session_ended();
                     tracker.finished(peer, result.err().map(|e| format!("{e:#}")));
                     if *shutdown_rx.borrow() {
                         break;
@@ -166,5 +181,6 @@ pub fn start(config: ServerConfig, sink: EventSink) -> Result<ServerHandle> {
         shutdown,
         thread: Some(thread),
         local_addr,
+        video,
     })
 }

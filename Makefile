@@ -6,7 +6,7 @@ DERIVED := app/build
 APP := $(DERIVED)/Build/Products/$(CONFIG)/ClawTank.app
 VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)
 
-.PHONY: build core app project test test-core test-app lint package clean spike-vd
+.PHONY: build core app project test test-core test-app lint audit package clean spike-vd dev-signing bench
 
 build: app ## Build Rust core + macOS app
 
@@ -19,7 +19,12 @@ project: ## Generate the Xcode project from app/project.yml
 app: core project
 	xcodebuild -project app/ClawTank.xcodeproj -scheme ClawTank -configuration $(CONFIG) \
 		-derivedDataPath $(DERIVED) -destination "platform=macOS,arch=$(ARCH)" ARCHS=$(ARCH) -quiet build
+	@if [ -f "$$HOME/Library/Keychains/clawtank-dev.keychain-db" ]; then scripts/dev-signing.sh sign "$(APP)"; \
+	else echo "note: ad-hoc signed (run 'make dev-signing' to keep permissions across rebuilds)"; fi
 	@echo "Built $(APP)"
+
+dev-signing: ## One-time: create the local "ClawTank Dev" signing identity (ADR-015)
+	scripts/dev-signing.sh setup
 
 test: test-core test-app ## Run all unit tests
 

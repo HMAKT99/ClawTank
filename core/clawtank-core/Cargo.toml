@@ -14,6 +14,10 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 # Exact pins for IronRDP: see docs/research/ironrdp.md. Bump deliberately, never implicitly.
 ironrdp-server = { version = "=0.13.0", default-features = false, features = ["egfx"] }
+ironrdp-dvc = "=0.8.0"
+ironrdp-egfx = "=0.3.0"
+ironrdp-pdu = "=0.9.0"
+ironrdp-svc = "=0.8.0"
 anyhow = "1" # ironrdp-server 0.13 trait signatures use anyhow::Result
 async-trait = "0.1"
 bytes = "1"
@@ -30,7 +34,6 @@ x509-cert = { version = "0.2", default-features = false, features = ["std"] }
 ironrdp-async = "=0.10.0"
 ironrdp-connector = "=0.10.0"
 ironrdp-graphics = "=0.9.0"
-ironrdp-pdu = "=0.9.0"
 ironrdp-session = "=0.11.0"
 ironrdp-tokio = { version = "=0.10.0", features = ["reqwest"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

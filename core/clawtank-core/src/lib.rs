@@ -5,17 +5,20 @@
 //! macOS-specific (capture, encode, input injection, Keychain); this side owns the RDP
 //! protocol.
 //!
-//! Phase 1: the server authenticates stock clients with NLA and serves a static test frame.
+//! Phase 2: the server authenticates stock clients with NLA and streams H.264 supplied by the
+//! host over the Graphics Pipeline (EGFX AVC420). Non-EGFX clients see a static test frame.
 
 pub mod access;
 pub mod display;
 pub mod events;
 pub mod ffi;
+pub mod gfx;
 pub mod input;
 pub mod logging;
 pub mod server;
 pub mod test_pattern;
 pub mod tls;
+pub mod video;
 
 /// Error type for the Rust-side API. FFI functions map errors to [`ffi::CtStatus`].
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
