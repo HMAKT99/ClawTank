@@ -13,7 +13,7 @@ Get the connection details from the ClawTank menu: **Copy Address**, the usernam
 - [ ] Close the session window. The menu returns to **Ready**.
 - [ ] A wrong password fails, and the menu shows **Failed login from <ip>**.
 - [ ] (Optional) the same from Windows `mstsc.exe` or another device on the LAN.
-- [ ] (CI) `tests/freerdp-smoke.sh` passes in the `freerdp-interop` job.
+- [x] (CI, first run 2026-10-21) FreeRDP 3 on Ubuntu authenticated with NLA, was refused with a wrong password, and connected and received the test frame. The final disconnect check failed only because the script killed the `xvfb-run` wrapper instead of FreeRDP; fixed.
 - Automated check against the running app (no GUI client needed):
   `CLAWTANK_PASSWORD="$(cat ~/Library/Application\ Support/ClawTank/secrets/rdp-password.secret)" core/target/debug/examples/probe 127.0.0.1:3389 "$(whoami)"`
   Build it first with `cd core && cargo build --example probe`. It connects with TLS + NLA, verifies the test pattern and saves `probe.bmp`.
