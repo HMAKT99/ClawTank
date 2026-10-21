@@ -33,6 +33,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.clawtank.ClawTank
+        SWIFT_OBJC_BRIDGING_HEADER: ClawTank/Private/ClawTank-Bridging-Header.h
         # System libs the Rust staticlib needs (from `cargo rustc --release -- --print native-static-libs`).
         OTHER_LDFLAGS: ["-lclawtank_core", "-lz", "-liconv", "-framework", "CoreFoundation", "-framework", "Security", "-framework", "SystemConfiguration"]
   ClawTankTests:

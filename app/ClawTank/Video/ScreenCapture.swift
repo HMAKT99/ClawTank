@@ -65,16 +65,17 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         return cfg
     }
 
-    /// The display that will be captured (the main display) and its bounds in global points.
-    static func capturedDisplay() -> (id: CGDirectDisplayID, bounds: CGRect) {
-        let id = CGMainDisplayID()
-        return (id, CGDisplayBounds(id))
-    }
-
-    func start(_ config: Configuration) async throws {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() })
-                ?? content.displays.first else { throw CaptureError.noDisplay }
+    /// Captures `displayID`. A just-created virtual display can take a moment to show up in
+    /// ScreenCaptureKit, so look for it for up to two seconds.
+    func start(_ config: Configuration, displayID: CGDirectDisplayID) async throws {
+        var found: SCDisplay?
+        for _ in 0..<20 {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            found = content.displays.first { $0.displayID == displayID }
+            if found != nil { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard let display = found else { throw CaptureError.noDisplay }
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let stream = SCStream(filter: filter, configuration: Self.streamConfiguration(config), delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)

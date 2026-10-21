@@ -32,8 +32,12 @@ final class VideoSession: @unchecked Sendable {
     private let overlay = StatsOverlay()
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "video")
 
-    init(server: RdpServer, width: Int, height: Int, overlayEnabled: @escaping @Sendable () -> Bool) {
+    let target: DisplayTarget
+
+    init(server: RdpServer, width: Int, height: Int, target: DisplayTarget,
+         overlayEnabled: @escaping @Sendable () -> Bool) {
         self.server = server
+        self.target = target
         self.contentWidth = width
         self.contentHeight = height
         self.overlayEnabled = overlayEnabled
@@ -70,7 +74,7 @@ final class VideoSession: @unchecked Sendable {
         try await capture.start(.init(
             contentWidth: contentWidth, contentHeight: contentHeight,
             codedWidth: codedWidth, codedHeight: codedHeight,
-            displaySize: ScreenCapture.capturedDisplay().bounds.size))
+            displaySize: target.bounds.size), displayID: target.displayID)
         self.capture = capture
     }
 
@@ -101,7 +105,8 @@ final class VideoSession: @unchecked Sendable {
     }
 
     private func deliver(_ frame: EncodedFrame) {
-        let result = server.submitH264(frame.data, keyframe: frame.isKeyframe)
+        let result = server.submitH264(frame.data, keyframe: frame.isKeyframe,
+                                       width: contentWidth, height: contentHeight)
         lock.withLock {
             counters.encodedFrames += 1
             counters.encodeSeconds += frame.encodeDuration

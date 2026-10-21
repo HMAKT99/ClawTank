@@ -36,6 +36,13 @@ final class ServerController: ObservableObject {
     @Published var showsStatsOverlay = false {
         didSet { overlayFlag.set(showsStatsOverlay) }
     }
+    /// Which display a session shows (persisted); takes effect at the next connection or resize.
+    @Published var displayMode = DisplayMode(rawValue: UserDefaults.standard.string(forKey: "displayMode") ?? "")
+        ?? .automatic {
+        didSet { UserDefaults.standard.set(displayMode.rawValue, forKey: "displayMode") }
+    }
+    /// e.g. "Virtual display 1512×982" while streaming.
+    @Published private(set) var displayDescription: String?
     /// Ctrl ↔ ⌘ swap for clients whose users press Ctrl+C to copy (persisted).
     @Published var swapControlCommand = UserDefaults.standard.bool(forKey: "swapControlCommand") {
         didSet {
@@ -52,6 +59,8 @@ final class ServerController: ObservableObject {
     private var password = ""
     private var server: RdpServer?
     private var video: VideoSession?
+    private var videoTask: Task<Void, Never>?
+    private let displays = DisplayService()
     private var statsTimer: Timer?
     private var lastCounters = VideoSession.Counters()
     private let overlayFlag = AtomicFlag()
@@ -91,7 +100,7 @@ final class ServerController: ObservableObject {
 
     func stop() {
         stopInput()
-        stopVideo()
+        stopVideo(releaseDisplay: true)
         server?.stop()
         server = nil
         status = .stopped
@@ -113,7 +122,9 @@ final class ServerController: ObservableObject {
         guard server != nil else { return }
         switch event {
         case .videoStart(let width, let height):
-            startVideo(width: width, height: height)
+            startVideo(width: width, height: height, scalePercent: nil)
+        case .videoResize(let width, let height, let scale):
+            startVideo(width: width, height: height, scalePercent: scale)
         case .videoStop:
             stopVideo()
         default:
@@ -132,7 +143,7 @@ final class ServerController: ObservableObject {
             startInput()
         case .clientDisconnected:
             stopInput()
-            stopVideo()
+            stopVideo(releaseDisplay: true)
             status = .listening(port: server?.port ?? port)
         case .connectionFailed(let peer, let error):
             log.notice("Connection from \(peer, privacy: .public) failed: \(error, privacy: .public)")
@@ -144,7 +155,7 @@ final class ServerController: ObservableObject {
         case .stopped:
             if case .failed = status { return }
             status = .stopped
-        case .videoStart, .videoStop:
+        case .videoStart, .videoResize, .videoStop:
             break
         }
     }
@@ -174,8 +185,10 @@ final class ServerController: ObservableObject {
 
     // MARK: - Video
 
-    private func startVideo(width: Int, height: Int) {
-        guard let server, video == nil else { return }
+    /// Starts (or, after a resize, restarts) video at `width`×`height`. Start, stop and restart
+    /// run strictly in order on `videoTask` so a resize can't race a disconnect.
+    private func startVideo(width: Int, height: Int, scalePercent: Int?) {
+        guard server != nil else { return }
         guard CGPreflightScreenCaptureAccess() else {
             // Shows the system prompt the first time; afterwards the user must use Settings.
             CGRequestScreenCaptureAccess()
@@ -183,34 +196,63 @@ final class ServerController: ObservableObject {
             log.notice("Screen Recording not granted; client sees the test pattern")
             return
         }
-        input.setSession(width: width, height: height)
-        let flag = overlayFlag
-        let session = VideoSession(server: server, width: width, height: height) { flag.get() }
-        video = session
-        lastCounters = .init()
-        Task {
+        let mode = displayMode
+        enqueueVideo { [self] in
+            await stopCurrentVideo()
+            guard let server else { return }
+            guard let target = await displays.prepare(width: width, height: height,
+                                                      scalePercent: scalePercent, mode: mode) else {
+                lastNotice = "No display available to share"
+                return
+            }
+            input.setSession(width: width, height: height, displayBounds: target.bounds)
+            let flag = overlayFlag
+            let session = VideoSession(server: server, width: width, height: height, target: target) { flag.get() }
+            video = session
+            lastCounters = .init()
             do {
                 try await session.start()
-                log.info("Video started \(width)x\(height), hardware=\(session.isHardwareAccelerated)")
+                displayDescription = "\(target.isVirtual ? "Virtual" : "Physical") display \(width)×\(height)"
+                log.info("Video \(width)x\(height) on \(target.displayID) virtual=\(target.isVirtual)")
             } catch {
                 log.error("Video start failed: \(error.localizedDescription, privacy: .public)")
                 if video === session { video = nil }
                 lastNotice = "Video failed: \(error.localizedDescription)"
+                return
             }
-        }
-        statsTimer?.invalidate()
-        statsTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.updateVideoStats() }
+            statsTimer?.invalidate()
+            statsTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.updateVideoStats() }
+            }
         }
     }
 
-    private func stopVideo() {
+    /// Stops video; with `releaseDisplay` also removes the virtual display (session over).
+    private func stopVideo(releaseDisplay: Bool = false) {
+        enqueueVideo { [self] in
+            await stopCurrentVideo()
+            if releaseDisplay {
+                displays.release()
+                displayDescription = nil
+            }
+        }
+    }
+
+    private func enqueueVideo(_ operation: @escaping @MainActor () async -> Void) {
+        let previous = videoTask
+        videoTask = Task { @MainActor in
+            await previous?.value
+            await operation()
+        }
+    }
+
+    private func stopCurrentVideo() async {
         statsTimer?.invalidate()
         statsTimer = nil
         videoStatus = nil
         guard let session = video else { return }
         video = nil
-        Task { await session.stop() }
+        await session.stop()
     }
 
     private func updateVideoStats() {

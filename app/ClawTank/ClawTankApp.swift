@@ -40,11 +40,17 @@ struct StatusMenu: View {
         if let notice = server.lastNotice {
             Text(notice)
         }
+        if let display = server.displayDescription {
+            Text(display)
+        }
         if let video = server.videoStatus {
             Text("Video: \(video)")
         }
         Toggle("Show Stats Overlay", isOn: $server.showsStatsOverlay)
         Toggle("Swap Ctrl and ⌘", isOn: $server.swapControlCommand)
+        Picker("Display", selection: $server.displayMode) {
+            ForEach(DisplayMode.allCases) { Text($0.title).tag($0) }
+        }
         Divider()
         Button("Copy Address (\(server.hostName))") { server.copyAddress() }
         Text("Username: \(server.username)")

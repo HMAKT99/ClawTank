@@ -69,6 +69,7 @@ final class RdpServer: @unchecked Sendable {
         case clientDisconnected(peer: String, error: String?)
         case connectionFailed(peer: String, error: String)
         case videoStart(width: Int, height: Int)
+        case videoResize(width: Int, height: Int, scalePercent: Int)
         case videoStop
         case stopped
         case error(String)
@@ -148,12 +149,13 @@ final class RdpServer: @unchecked Sendable {
     deinit { stop() }
 
     /// Hands one Annex-B access unit to the core (copied before returning). Thread-safe.
-    func submitH264(_ data: Data, keyframe: Bool) -> SubmitResult {
+    func submitH264(_ data: Data, keyframe: Bool, width: Int, height: Int) -> SubmitResult {
         lock.lock()
         defer { lock.unlock() }
         guard let handle else { return .notReady }
         let result = data.withUnsafeBytes { bytes in
-            ct_server_submit_h264(handle, bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, keyframe)
+            ct_server_submit_h264(handle, bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, keyframe,
+                                  UInt16(clamping: width), UInt16(clamping: height))
         }
         switch result {
         case CT_SUBMIT_RESULT_SENT: return .sent
@@ -203,6 +205,10 @@ final class RdpServer: @unchecked Sendable {
             let size = detail.split(separator: "x").compactMap { Int($0) }
             return size.count == 2 ? .videoStart(width: size[0], height: size[1]) : .error("bad video size \(detail)")
         case CT_EVENT_KIND_VIDEO_STOP: return .videoStop
+        case CT_EVENT_KIND_VIDEO_RESIZE:
+            let parts = detail.split(whereSeparator: { $0 == "x" || $0 == "@" }).compactMap { Int($0) }
+            return parts.count == 3 ? .videoResize(width: parts[0], height: parts[1], scalePercent: parts[2])
+                : .error("bad resize \(detail)")
         case CT_EVENT_KIND_STOPPED: return .stopped
         default: return .error(detail)
         }

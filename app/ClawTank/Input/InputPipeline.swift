@@ -11,7 +11,7 @@ final class InputPipeline: @unchecked Sendable {
     private var lastTrustCheck = 0.0
 
     init(swapControlCommand: Bool, poster: EventPoster = SystemEventPoster()) {
-        let (_, bounds) = ScreenCapture.capturedDisplay()
+        let bounds = CGDisplayBounds(CGMainDisplayID())
         injector = InputInjector(
             mapper: CoordinateMapper(sessionWidth: bounds.width, sessionHeight: bounds.height, displayBounds: bounds),
             swapControlCommand: swapControlCommand, poster: poster)
@@ -30,10 +30,9 @@ final class InputPipeline: @unchecked Sendable {
         }
     }
 
-    /// Session size changed (video start): map client coordinates onto the captured display.
-    func setSession(width: Int, height: Int) {
+    /// Session started or resized: map client coordinates onto the display being shown.
+    func setSession(width: Int, height: Int, displayBounds bounds: CGRect) {
         queue.async { [self] in
-            let (_, bounds) = ScreenCapture.capturedDisplay()
             injector.mapper = CoordinateMapper(sessionWidth: Double(width), sessionHeight: Double(height),
                                                displayBounds: bounds)
         }
