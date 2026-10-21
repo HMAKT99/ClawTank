@@ -42,6 +42,13 @@ private struct GeneralSettings: View {
             Toggle("Keep this Mac awake while someone is connected", isOn: $settings.keepAwake)
             Toggle("Swap Ctrl and ⌘ (Ctrl+C copies)", isOn: $settings.swapControlCommand)
             Toggle("Show stats overlay on the video", isOn: $settings.showsStatsOverlay)
+            Section("Sound and clipboard") {
+                Toggle("Play this Mac's sound on the client", isOn: $settings.audioEnabled)
+                Toggle("Mute this Mac's speakers while connected", isOn: $settings.muteLocalAudio)
+                    .disabled(!settings.audioEnabled)
+                Toggle("Share the clipboard (text, rich text, HTML, images)", isOn: $settings.clipboardEnabled)
+                Text("Applies from the next connection.").font(.callout).foregroundStyle(.secondary)
+            }
             Section("Connect") {
                 ConnectionDetails(server: server)
             }

@@ -64,6 +64,7 @@ final class ServerController: ObservableObject {
     private let overlayFlag = AtomicFlag()
     private let input: InputPipeline
     private var cursor: CursorPublisher?
+    private var media: SessionMedia?
     private var subscriptions: Set<AnyCancellable> = []
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "server")
 
@@ -171,6 +172,11 @@ final class ServerController: ObservableObject {
             startVideo(width: width, height: height, scalePercent: scale)
         case .videoStop:
             stopVideo()
+        case .audioStart, .audioStop, .clipboardReady, .clipboardRemoteFormats, .clipboardDataRequested,
+             .clipboardData:
+            if let media { media.handle(event) } else if case .clipboardDataRequested = event {
+                server?.clipboardProvide(nil)
+            }
         default:
             handleConnection(event)
         }
@@ -182,13 +188,7 @@ final class ServerController: ObservableObject {
             if case .connected = status { return }
             status = .listening(port: server?.port ?? port)
         case .clientConnected(let peer):
-            let ip = Self.ipOnly(peer)
-            status = .connected(peer: ip)
-            session = SessionInfo(peer: ip, since: Date())
-            lastNotice = nil
-            record(.connected, ip)
-            if settings.keepAwake { _ = power.begin(reason: "ClawTank remote session") }
-            startInput()
+            beginSession(peer: Self.ipOnly(peer))
         case .clientDisconnected(let peer, let error):
             record(.disconnected, Self.ipOnly(peer), detail: error)
             endSession()
@@ -200,7 +200,7 @@ final class ServerController: ObservableObject {
         case .stopped:
             if case .failed = status { return }
             status = .stopped
-        case .videoStart, .videoResize, .videoStop:
+        default:
             break
         }
     }
@@ -238,7 +238,19 @@ final class ServerController: ObservableObject {
         log.notice("Screen \(locked ? "locked" : "unlocked", privacy: .public)")
     }
 
+    private func beginSession(peer ip: String) {
+        status = .connected(peer: ip)
+        session = SessionInfo(peer: ip, since: Date())
+        lastNotice = nil
+        record(.connected, ip)
+        if settings.keepAwake { _ = power.begin(reason: "ClawTank remote session") }
+        startInput()
+        if let server { media = SessionMedia(server: server, settings: settings) }
+    }
+
     private func endSession() {
+        media?.stop()
+        media = nil
         stopInput()
         stopVideo(releaseDisplay: true)
         power.end()

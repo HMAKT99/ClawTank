@@ -47,6 +47,12 @@ final class AppSettings: ObservableObject {
     /// Comma-separated IPs/CIDRs; empty = anyone allowed by LAN-only.
     @Published var allowlist: String { didSet { save(allowlist, "allowlist") } }
     @Published var hasCompletedOnboarding: Bool { didSet { save(hasCompletedOnboarding, "onboarded") } }
+    /// Send the Mac's sound to the client (applies from the next connection).
+    @Published var audioEnabled: Bool { didSet { save(audioEnabled, "audioEnabled") } }
+    /// Mute the Mac's own speakers while a client is connected.
+    @Published var muteLocalAudio: Bool { didSet { save(muteLocalAudio, "muteLocalAudio") } }
+    /// Share the clipboard both ways (applies from the next connection).
+    @Published var clipboardEnabled: Bool { didSet { save(clipboardEnabled, "clipboardEnabled") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -62,6 +68,9 @@ final class AppSettings: ObservableObject {
         lanOnly = defaults.object(forKey: "lanOnly") as? Bool ?? true
         allowlist = defaults.string(forKey: "allowlist") ?? ""
         hasCompletedOnboarding = defaults.bool(forKey: "onboarded")
+        audioEnabled = defaults.object(forKey: "audioEnabled") as? Bool ?? true
+        muteLocalAudio = defaults.bool(forKey: "muteLocalAudio")
+        clipboardEnabled = defaults.object(forKey: "clipboardEnabled") as? Bool ?? true
     }
 
     /// Effective frame rate for capture/encode.
@@ -77,7 +86,9 @@ final class AppSettings: ObservableObject {
             "displayMode": displayMode.rawValue, "maxFrameRate": "\(maxFrameRate)", "quality": quality.rawValue,
             "swapControlCommand": "\(swapControlCommand)", "showsStatsOverlay": "\(showsStatsOverlay)",
             "keepAwake": "\(keepAwake)", "port": "\(port)", "lanOnly": "\(lanOnly)",
-            "allowlist": allowlist.isEmpty ? "(none)" : allowlist
+            "allowlist": allowlist.isEmpty ? "(none)" : allowlist,
+            "audioEnabled": "\(audioEnabled)", "muteLocalAudio": "\(muteLocalAudio)",
+            "clipboardEnabled": "\(clipboardEnabled)"
         ]
     }
 }
