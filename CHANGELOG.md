@@ -4,6 +4,15 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Phase 3 — Input (2026-10-21)
+- Keyboard: positional scancode map (so Mac input sources decide the layout), all modifiers, Caps Lock, auto-repeat, F1–F20, navigation and keypad, ISO/JIS keys, media keys, and Unicode events including surrogate pairs. Optional Ctrl↔⌘ swap in the menu.
+- Mouse: absolute and relative motion mapped through the same aspect-fit rect used for capture; left, right, middle, back and forward buttons; drags; double and triple clicks; smooth vertical and horizontal pixel scrolling.
+- Held keys and buttons are released when a session ends.
+- Client-side cursor: the Mac's current cursor shape is sent to the client (≤32 px, only on change) and no longer drawn into the video.
+- Accessibility is requested on the first session.
+- Vendored `ironrdp-server` 0.13.0 with two IronRDP-master fixes: mouse button/wheel mapping and the pointer AND mask (ADR-017).
+- Tests: input and cursor end-to-end in Rust; Swift key map, coordinate mapping, injector and cursor tests; live input test against the app (docs/testing.md).
+
 ### Phase 2 — Live video (2026-10-21)
 - Main display streamed as H.264 over EGFX AVC420. The pipeline is ScreenCaptureKit (IOSurface NV12) → VideoToolbox (hardware, low-latency rtvc, no B-frames) → Annex-B → IronRDP graphics pipeline. Backpressure is checked before encoding, and any refused frame forces an IDR.
 - Only changed frames are captured or encoded. The coded size is 16-aligned, with the region rect cropping to the desktop.

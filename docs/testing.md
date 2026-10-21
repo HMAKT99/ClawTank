@@ -32,4 +32,13 @@ Results, 2026-10-21, M2 MacBook Air, macOS 15.6.1, loopback, 1512×982 session:
 - `make bench` (synthetic 2560×1600 @ 60): rtvc low-latency p50 11.0 ms, p95 20.3 ms; ave.avc p50 11.6 ms, p95 37.5 ms (ADR-016).
 - [ ] Human: Windows App shows the live desktop, window dragging is smooth, video playback looks right, text is crisp.
 - [ ] Human: "Show Stats Overlay" draws fps/bitrate/encode time on the video.
-- [ ] Not yet measured: end-to-end input→display latency (needs input, Phase 3).
+- [ ] Not yet measured: end-to-end input→display latency.
+
+## Phase 3 — input and cursor
+Automated live test (it takes over the mouse and keyboard for about 15 s; ask first): a centred test window plus
+`probe … 1512x982 --input-demo OUTDIR`. Results, 2026-10-21, M2, macOS 15.6.1, Accessibility granted:
+- ✅ Click at the session centre landed at the exact screen centre (735, 478 of 1470×956 pt).
+- ✅ Scancodes typed `clawtank`; Shift+1 gave `!`; the Unicode event gave `é`. A Shift flag that leaked onto the Unicode event was found here and fixed.
+- ✅ 3 wheel notches gave 3 continuous pixel scrolls (−40 each); the middle click arrived as button 2.
+- ✅ Cursor shapes reached the client: arrow 17×24 (hotspot 4,4) and I-beam 9×18 (hotspot 4,9) over text, correct orientation.
+- [ ] Human (Windows App / mstsc): type in a non-US layout with the same layout selected on the Mac; ⌘C/⌘V/⌘Tab (Windows key = ⌘ by default, or turn on "Swap Ctrl and ⌘"); trackpad scrolling feel; resize and hand cursors.

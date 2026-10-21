@@ -5,6 +5,9 @@
 //!        `CLAWTANK_PASSWORD=… cargo run --example probe -- <host:port> <user> WxH --egfx SECONDS`
 //! The second form joins the Graphics Pipeline and prints H.264 frames/s and kbit/s once per
 //! second (the live ScreenCaptureKit → VideoToolbox → EGFX path), plus totals.
+//!        `CLAWTANK_PASSWORD=… cargo run --example probe -- <host:port> <user> WxH --input-demo OUTDIR`
+//! The third form drives the Mac like a user: clicks the screen centre, types "clawtank!" and
+//! "é", scrolls down 3 notches, middle-clicks, and saves every cursor shape received to OUTDIR.
 //! The password comes from the environment so it never appears in the process list.
 
 #[path = "../tests/support/client.rs"]
@@ -45,6 +48,10 @@ async fn main() -> anyhow::Result<()> {
         .next()
         .ok_or_else(|| anyhow::anyhow!("cannot resolve {addr}"))?;
 
+    if args.get(3).map(String::as_str) == Some("--input-demo") {
+        let out_dir = args.get(4).cloned().unwrap_or_else(|| ".".to_owned());
+        return input_demo(addr, user, &password, width, height, &out_dir).await;
+    }
     if let Some(seconds) = egfx_seconds {
         return measure_egfx(addr, user, &password, width, height, seconds).await;
     }
@@ -129,6 +136,163 @@ async fn measure_egfx(
             println!("wrote first access unit to {path}");
         }
     }
+    Ok(())
+}
+
+/// Answers the server for `duration`, collecting cursor shapes.
+async fn pump_for(
+    stage: &mut ironrdp_session::ActiveStage,
+    session: &mut client::Session,
+    image: &mut ironrdp_session::image::DecodedImage,
+    duration: Duration,
+    pointers: &mut Vec<std::sync::Arc<ironrdp_graphics::pointer::DecodedPointer>>,
+) -> anyhow::Result<()> {
+    use ironrdp_async::FramedWrite as _;
+    let deadline = Instant::now() + duration;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Ok(());
+        }
+        let Ok(read) = tokio::time::timeout(remaining, session.read_pdu()).await else {
+            return Ok(());
+        };
+        let (action, payload) = read?;
+        for out in stage.process(image, action, &payload)? {
+            match out {
+                ironrdp_session::ActiveStageOutput::ResponseFrame(f) => {
+                    session.write_all(&f).await?
+                }
+                ironrdp_session::ActiveStageOutput::PointerBitmap(p) => pointers.push(p),
+                _ => {}
+            }
+        }
+    }
+}
+
+async fn send(
+    stage: &mut ironrdp_session::ActiveStage,
+    session: &mut client::Session,
+    image: &mut ironrdp_session::image::DecodedImage,
+    events: &[ironrdp_pdu::input::fast_path::FastPathInputEvent],
+) -> anyhow::Result<()> {
+    use ironrdp_async::FramedWrite as _;
+    for out in stage.process_fastpath_input(image, events)? {
+        if let ironrdp_session::ActiveStageOutput::ResponseFrame(f) = out {
+            session.write_all(&f).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn input_demo(
+    addr: std::net::SocketAddr,
+    user: &str,
+    password: &str,
+    width: u16,
+    height: u16,
+    out_dir: &str,
+) -> anyhow::Result<()> {
+    use ironrdp_pdu::input::MousePdu;
+    use ironrdp_pdu::input::fast_path::{FastPathInputEvent as E, KeyboardFlags as K};
+    use ironrdp_pdu::input::mouse::PointerFlags as P;
+    let mouse = |flags, wheel, x, y| {
+        E::MouseEvent(MousePdu {
+            flags,
+            number_of_wheel_rotation_units: wheel,
+            x_position: x,
+            y_position: y,
+        })
+    };
+    let config = client::client_config_with(user, password, width, height, true);
+    let (result, mut session, _) = client::connect_with(addr, config, None).await?;
+    let mut stage = client::active_stage(result);
+    let mut image = ironrdp_session::image::DecodedImage::new(
+        ironrdp_graphics::image_processing::PixelFormat::RgbA32,
+        width,
+        height,
+    );
+    let mut pointers = Vec::new();
+    let (cx, cy) = (width / 2, height / 2);
+    let ms = Duration::from_millis;
+    println!("connected; driving input");
+    pump_for(
+        &mut stage,
+        &mut session,
+        &mut image,
+        ms(1500),
+        &mut pointers,
+    )
+    .await?;
+
+    // Click the centre of the screen (the test window's text box) to focus it.
+    send(
+        &mut stage,
+        &mut session,
+        &mut image,
+        &[mouse(P::MOVE, 0, cx, cy)],
+    )
+    .await?;
+    pump_for(&mut stage, &mut session, &mut image, ms(300), &mut pointers).await?;
+    let click = [
+        mouse(P::LEFT_BUTTON | P::DOWN, 0, cx, cy),
+        mouse(P::LEFT_BUTTON, 0, cx, cy),
+    ];
+    send(&mut stage, &mut session, &mut image, &click).await?;
+    pump_for(&mut stage, &mut session, &mut image, ms(500), &mut pointers).await?;
+
+    // "clawtank" by scancode, then Shift+1 for "!", then "é" as a Unicode event.
+    for code in [0x2e_u8, 0x26, 0x1e, 0x11, 0x14, 0x1e, 0x31, 0x25] {
+        let key = [
+            E::KeyboardEvent(K::empty(), code),
+            E::KeyboardEvent(K::RELEASE, code),
+        ];
+        send(&mut stage, &mut session, &mut image, &key).await?;
+        pump_for(&mut stage, &mut session, &mut image, ms(40), &mut pointers).await?;
+    }
+    let bang = [
+        E::KeyboardEvent(K::empty(), 0x2a),
+        E::KeyboardEvent(K::empty(), 0x02),
+        E::KeyboardEvent(K::RELEASE, 0x02),
+        E::KeyboardEvent(K::RELEASE, 0x2a),
+        E::UnicodeKeyboardEvent(K::empty(), 0x00e9),
+        E::UnicodeKeyboardEvent(K::RELEASE, 0x00e9),
+    ];
+    send(&mut stage, &mut session, &mut image, &bang).await?;
+    pump_for(&mut stage, &mut session, &mut image, ms(500), &mut pointers).await?;
+
+    // Scroll down three notches, then a middle click.
+    for _ in 0..3 {
+        let wheel = [mouse(P::VERTICAL_WHEEL | P::WHEEL_NEGATIVE, -120, cx, cy)];
+        send(&mut stage, &mut session, &mut image, &wheel).await?;
+        pump_for(&mut stage, &mut session, &mut image, ms(100), &mut pointers).await?;
+    }
+    let middle = [
+        mouse(P::MIDDLE_BUTTON_OR_WHEEL | P::DOWN, 0, cx, cy),
+        mouse(P::MIDDLE_BUTTON_OR_WHEEL, 0, cx, cy),
+    ];
+    send(&mut stage, &mut session, &mut image, &middle).await?;
+    pump_for(
+        &mut stage,
+        &mut session,
+        &mut image,
+        ms(1000),
+        &mut pointers,
+    )
+    .await?;
+
+    println!("cursor shapes received: {}", pointers.len());
+    for (i, p) in pointers.iter().enumerate() {
+        let path = format!("{out_dir}/cursor-{i}.bmp");
+        let stride = usize::from(p.width) * 4;
+        write_bmp(&path, p.width, p.height, &p.bitmap_data, stride)?;
+        println!(
+            "  #{i}: {}x{} hotspot ({}, {}) -> {path}",
+            p.width, p.height, p.hotspot_x, p.hotspot_y
+        );
+    }
+    drop(session);
+    println!("disconnected");
     Ok(())
 }
 

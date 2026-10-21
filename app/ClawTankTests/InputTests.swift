@@ -150,6 +150,14 @@ final class InputInjectorTests: XCTestCase {
         XCTAssertEqual(injector.currentFlags, [])
     }
 
+    func testUnicodeAfterReleasedShiftCarriesNoShift() {
+        let (injector, poster) = makeInjector()
+        injector.handle(.key(scancode: 0x2A, extended: false, down: true))
+        injector.handle(.key(scancode: 0x2A, extended: false, down: false))
+        injector.handle(.unicode(0x00E9, down: true))
+        XCTAssertFalse(try XCTUnwrap(poster.events.last).flags.contains(.maskShift))
+    }
+
     func testMediaKeysAndUnicodeSurrogates() {
         let (injector, poster) = makeInjector()
         injector.handle(.key(scancode: 0x20, extended: true, down: true))

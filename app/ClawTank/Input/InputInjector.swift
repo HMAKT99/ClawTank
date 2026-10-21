@@ -149,6 +149,9 @@ final class InputInjector {
         }
         guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down) else { return }
         event.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
+        // Set flags explicitly: otherwise the HID-state source can leak a modifier that was
+        // just released (seen live: "é" typed with Shift after Shift+1).
+        event.flags = currentFlags
         poster.post(event)
     }
 
