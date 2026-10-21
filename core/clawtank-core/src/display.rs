@@ -4,6 +4,8 @@
 //! The frame is sized to the client's requested desktop (clamped) and sent once, so an idle
 //! session costs no bandwidth. Live capture replaces this in Phase 2.
 //!
+//! After the frame, the same stream carries cursor shapes from [`PointerHub`].
+//!
 //! IronRDP calls [`RdpServerDisplay::updates`] only after the client has authenticated and
 //! finished capability exchange, so that call doubles as our "session started" signal.
 
@@ -17,7 +19,10 @@ use ironrdp_server::{
 };
 use tracing::info;
 
+use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
+
 use crate::access::SessionTracker;
+use crate::pointer::PointerHub;
 use crate::test_pattern;
 use crate::video::VideoHub;
 
@@ -36,14 +41,20 @@ pub struct TestPatternDisplay {
     size: DesktopSize,
     tracker: Arc<SessionTracker>,
     video: Arc<VideoHub>,
+    pointer: Arc<PointerHub>,
 }
 
 impl TestPatternDisplay {
-    pub fn new(tracker: Arc<SessionTracker>, video: Arc<VideoHub>) -> Self {
+    pub fn new(
+        tracker: Arc<SessionTracker>,
+        video: Arc<VideoHub>,
+        pointer: Arc<PointerHub>,
+    ) -> Self {
         Self {
             size: DEFAULT_SIZE,
             tracker,
             video,
+            pointer,
         }
     }
 }
@@ -71,9 +82,12 @@ impl RdpServerDisplay for TestPatternDisplay {
 
     async fn updates(&mut self) -> anyhow::Result<Box<dyn RdpServerDisplayUpdates>> {
         self.tracker.session_started();
+        let (tx, rx) = unbounded_channel();
+        self.pointer.attach(tx);
         Ok(Box::new(TestPatternUpdates {
             size: self.size,
             sent: false,
+            pointer: rx,
         }))
     }
 }
@@ -81,6 +95,7 @@ impl RdpServerDisplay for TestPatternDisplay {
 struct TestPatternUpdates {
     size: DesktopSize,
     sent: bool,
+    pointer: UnboundedReceiver<DisplayUpdate>,
 }
 
 impl TestPatternUpdates {
@@ -111,8 +126,12 @@ impl RdpServerDisplayUpdates for TestPatternUpdates {
             );
             return Ok(Some(self.frame()));
         }
-        // Static content: nothing more to send. Must not return `None` (that ends the session).
-        std::future::pending().await
+        // After the frame, only cursor shapes flow here (video goes over EGFX). Never return
+        // `None` (that ends the session): if the pointer source goes away, just idle.
+        match self.pointer.recv().await {
+            Some(update) => Ok(Some(update)),
+            None => std::future::pending().await,
+        }
     }
 }
 

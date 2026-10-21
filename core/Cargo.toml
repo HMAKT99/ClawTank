@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["clawtank-core"]
+# Vendored upstream code is built but not linted or formatted as ours.
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,6 +10,11 @@ edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/clawtank/clawtank"
 rust-version = "1.88"
+
+# Temporary: ironrdp-server 0.13.0 + mouse-mapping fix from IronRDP master (ADR-017).
+# Remove when IronRDP publishes a release containing the fix.
+[patch.crates-io]
+ironrdp-server = { path = "vendor/ironrdp-server" }
 
 [profile.release]
 lto = "thin"

@@ -15,6 +15,7 @@ use std::sync::{Arc, OnceLock};
 use tracing::Level;
 
 use crate::events::CoreEvent;
+use crate::input::InputEvent;
 use crate::server::{self, ServerConfig, ServerHandle};
 use crate::tls::TlsIdentity;
 use crate::video::SubmitResult;
@@ -101,6 +102,108 @@ pub type CtEventCallback =
 
 /// Receives log lines. `message` is a NUL-terminated UTF-8 string valid only for the call.
 pub type CtLogCallback = Option<unsafe extern "C" fn(level: CtLogLevel, message: *const c_char)>;
+
+/// Kind of a client input event.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CtInputKind {
+    /// `code` = Set-1 scancode, `extended` = 0xE0 prefix, `down`.
+    Key = 0,
+    /// `code` = UTF-16 code unit, `down`.
+    Unicode = 1,
+    /// `flags` = lock keys (bit 0 Scroll, 1 Num, 2 Caps, 3 Kana).
+    Sync = 2,
+    /// `x`, `y` = absolute position in desktop (session) pixels.
+    Move = 3,
+    /// `x`, `y` = relative motion.
+    RelMove = 4,
+    /// `button` (0 left, 1 right, 2 middle, 3 X1/back, 4 X2/forward), `down`.
+    Button = 5,
+    /// `y` = vertical, `x` = horizontal wheel units (120 per notch; +y away from user, +x right).
+    Wheel = 6,
+}
+
+/// One client input event. Fields not used by `kind` are zero.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CtInputEvent {
+    pub kind: CtInputKind,
+    pub code: u16,
+    pub extended: bool,
+    pub down: bool,
+    pub button: u8,
+    pub flags: u32,
+    pub x: i32,
+    pub y: i32,
+}
+
+/// Receives input events on a core thread. `event` is valid only for the call. Keep it fast:
+/// it runs on the session's network task.
+pub type CtInputCallback =
+    Option<unsafe extern "C" fn(ctx: *mut c_void, event: *const CtInputEvent)>;
+
+fn input_to_c(event: InputEvent) -> CtInputEvent {
+    let base = CtInputEvent {
+        kind: CtInputKind::Key,
+        code: 0,
+        extended: false,
+        down: false,
+        button: 0,
+        flags: 0,
+        x: 0,
+        y: 0,
+    };
+    match event {
+        InputEvent::Key {
+            code,
+            extended,
+            down,
+        } => CtInputEvent {
+            code: u16::from(code),
+            extended,
+            down,
+            ..base
+        },
+        InputEvent::Unicode { unit, down } => CtInputEvent {
+            kind: CtInputKind::Unicode,
+            code: unit,
+            down,
+            ..base
+        },
+        InputEvent::Sync { flags } => CtInputEvent {
+            kind: CtInputKind::Sync,
+            flags,
+            ..base
+        },
+        InputEvent::Move { x, y } => CtInputEvent {
+            kind: CtInputKind::Move,
+            x: i32::from(x),
+            y: i32::from(y),
+            ..base
+        },
+        InputEvent::RelMove { dx, dy } => CtInputEvent {
+            kind: CtInputKind::RelMove,
+            x: dx,
+            y: dy,
+            ..base
+        },
+        InputEvent::Button { button, down } => CtInputEvent {
+            kind: CtInputKind::Button,
+            button: button as u8,
+            down,
+            ..base
+        },
+        InputEvent::Wheel {
+            vertical,
+            horizontal,
+        } => CtInputEvent {
+            kind: CtInputKind::Wheel,
+            x: horizontal,
+            y: vertical,
+            ..base
+        },
+    }
+}
 
 /// Bytes allocated by the core. Free with [`ct_buffer_free`].
 #[repr(C)]
@@ -307,11 +410,12 @@ pub unsafe extern "C" fn ct_string_free(s: *mut c_char) {
 pub unsafe extern "C" fn ct_server_start(
     config: *const CtServerConfig,
     callback: CtEventCallback,
+    input_callback: CtInputCallback,
     ctx: *mut c_void,
     out_status: *mut CtStatus,
 ) -> *mut CtServer {
     // SAFETY: forwarded caller guarantees.
-    let result = unsafe { server_start(config, callback, ctx) };
+    let result = unsafe { server_start(config, callback, input_callback, ctx) };
     let (server, status) = match result {
         Ok(handle) => (Box::into_raw(Box::new(CtServer { handle })), CtStatus::Ok),
         Err(status) => (std::ptr::null_mut(), status),
@@ -326,6 +430,7 @@ pub unsafe extern "C" fn ct_server_start(
 unsafe fn server_start(
     config: *const CtServerConfig,
     callback: CtEventCallback,
+    input_callback: CtInputCallback,
     ctx: *mut c_void,
 ) -> Result<ServerHandle, CtStatus> {
     if config.is_null() {
@@ -371,6 +476,7 @@ unsafe fn server_start(
     }
 
     let ctx = Arc::new(HostCtx(ctx));
+    let input_ctx = Arc::clone(&ctx);
     let sink = Arc::new(move |event: CoreEvent| {
         let Some(cb) = callback else { return };
         let (kind, detail) = event_to_c(&event);
@@ -380,7 +486,15 @@ unsafe fn server_start(
         }
     });
 
-    server::start(config, sink).map_err(|e| {
+    let input = Arc::new(move |event: InputEvent| {
+        let Some(cb) = input_callback else { return };
+        let event = input_to_c(event);
+        // SAFETY: the host registered this callback and ctx for exactly this use; the event
+        // pointer is valid for the duration of the call.
+        unsafe { cb(input_ctx.0, &event) };
+    });
+
+    server::start(config, sink, input).map_err(|e| {
         tracing::error!(error = %e, "Failed to start RDP server");
         if e.downcast_ref::<std::io::Error>().is_some() {
             CtStatus::BindFailed
@@ -440,6 +554,45 @@ pub unsafe extern "C" fn ct_server_submit_h264(
         SubmitResult::Sent => CtSubmitResult::Sent,
         SubmitResult::NotReady => CtSubmitResult::NotReady,
         SubmitResult::NeedKeyframe => CtSubmitResult::NeedKeyframe,
+    }
+}
+
+/// Sets the client-side cursor shape: 32 bpp **BGRA, straight alpha, rows bottom-up**,
+/// at most 96×96, hotspot inside. Returns false for invalid input. Sessions starting later
+/// receive the latest shape.
+///
+/// # Safety
+/// `server` must be a live pointer from `ct_server_start`; `bgra` must point to `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_server_set_pointer(
+    server: *const CtServer,
+    bgra: *const u8,
+    len: usize,
+    width: u16,
+    height: u16,
+    hot_x: u16,
+    hot_y: u16,
+) -> bool {
+    // SAFETY: caller guarantees `bgra` points to `len` readable bytes.
+    let (Some(server), Some(data)) = (unsafe { server.as_ref() }, unsafe { bytes(bgra, len) })
+    else {
+        return false;
+    };
+    server
+        .handle
+        .pointer()
+        .set(data, width, height, hot_x, hot_y)
+}
+
+/// Hides the client-side cursor.
+///
+/// # Safety
+/// `server` must be null or a live pointer from `ct_server_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_server_hide_pointer(server: *const CtServer) {
+    // SAFETY: null or live per the contract.
+    if let Some(server) = unsafe { server.as_ref() } {
+        server.handle.pointer().hide();
     }
 }
 
@@ -554,7 +707,9 @@ mod tests {
         let mut status = CtStatus::Ok;
         // SAFETY: exercising the null checks.
         unsafe {
-            assert!(ct_server_start(null(), None, null_mut(), &mut status).is_null());
+            assert!(ct_server_start(null(), None, None, null_mut(), &mut status).is_null());
+            assert!(!ct_server_set_pointer(null(), null(), 0, 1, 1, 0, 0));
+            ct_server_hide_pointer(null());
             assert_eq!(status, CtStatus::InvalidArgument);
             assert_eq!(
                 ct_generate_tls_identity(null(), null_mut(), null_mut()),
@@ -572,6 +727,29 @@ mod tests {
             ct_string_free(null_mut());
             ct_buffer_free(CtBuffer::EMPTY);
         }
+    }
+
+    #[test]
+    fn input_events_flatten() {
+        let e = input_to_c(InputEvent::Wheel {
+            vertical: -120,
+            horizontal: 60,
+        });
+        assert_eq!((e.kind, e.x, e.y), (CtInputKind::Wheel, 60, -120));
+        let e = input_to_c(InputEvent::Button {
+            button: crate::input::MouseButton::X2,
+            down: true,
+        });
+        assert_eq!((e.kind, e.button, e.down), (CtInputKind::Button, 4, true));
+        let e = input_to_c(InputEvent::Key {
+            code: 0x5b,
+            extended: true,
+            down: false,
+        });
+        assert_eq!(
+            (e.kind, e.code, e.extended, e.down),
+            (CtInputKind::Key, 0x5b, true, false)
+        );
     }
 
     #[test]

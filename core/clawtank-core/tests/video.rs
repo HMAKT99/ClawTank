@@ -36,7 +36,12 @@ async fn submitted_h264_reaches_an_egfx_client() {
         identity: TlsIdentity::generate("video-test.local").unwrap(),
         lan_only: true,
     };
-    let server = server::start(config, Arc::new(move |e| log.lock().unwrap().push(e))).unwrap();
+    let server = server::start(
+        config,
+        Arc::new(move |e| log.lock().unwrap().push(e)),
+        Arc::new(|_| {}),
+    )
+    .unwrap();
     let video = Arc::clone(server.video());
     assert_eq!(
         video.submit_h264(FAKE_IDR, true),

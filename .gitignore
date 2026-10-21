@@ -10,3 +10,6 @@ DerivedData/
 build/
 dist/
 .DS_Store
+
+# Never build inside vendored crates (would create a second target dir)
+core/vendor/*/target/

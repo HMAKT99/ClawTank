@@ -41,6 +41,17 @@ pub fn client_config(
     width: u16,
     height: u16,
 ) -> ironrdp_connector::Config {
+    client_config_with(user, password, width, height, false)
+}
+
+/// `server_pointer`: ask the server for cursor shapes (client-side cursor rendering).
+pub fn client_config_with(
+    user: &str,
+    password: &str,
+    width: u16,
+    height: u16,
+    server_pointer: bool,
+) -> ironrdp_connector::Config {
     ironrdp_connector::Config {
         desktop_size: ironrdp_connector::DesktopSize { width, height },
         desktop_scale_factor: 0,
@@ -72,8 +83,8 @@ pub fn client_config(
         license_cache: None,
         timezone_info: TimezoneInfo::default(),
         compression_type: None,
-        enable_server_pointer: false,
-        pointer_software_rendering: true,
+        enable_server_pointer: server_pointer,
+        pointer_software_rendering: !server_pointer,
         multitransport_flags: None,
     }
 }
@@ -141,12 +152,20 @@ pub async fn connect(
     height: u16,
     egfx: Option<&EgfxRecorder>,
 ) -> anyhow::Result<(ConnectionResult, Session, Vec<u8>)> {
+    connect_with(addr, client_config(user, password, width, height), egfx).await
+}
+
+/// Like [`connect`], with a caller-built configuration.
+pub async fn connect_with(
+    addr: SocketAddr,
+    config: ironrdp_connector::Config,
+    egfx: Option<&EgfxRecorder>,
+) -> anyhow::Result<(ConnectionResult, Session, Vec<u8>)> {
     let server_name = "clawtank-server";
     let tcp = TcpStream::connect(addr).await?;
     let client_addr = tcp.local_addr()?;
     let mut framed = ironrdp_tokio::TokioFramed::new(tcp);
-    let mut connector =
-        ClientConnector::new(client_config(user, password, width, height), client_addr);
+    let mut connector = ClientConnector::new(config, client_addr);
     if let Some(recorder) = egfx {
         let gfx = GraphicsPipelineClient::new(
             Box::new(RecordingHandler(recorder.clone())),
@@ -197,7 +216,7 @@ pub async fn connect(
     Ok((result, framed, cert_der))
 }
 
-fn active_stage(result: ConnectionResult) -> ironrdp_session::ActiveStage {
+pub fn active_stage(result: ConnectionResult) -> ironrdp_session::ActiveStage {
     ActiveStageBuilder {
         static_channels: result.static_channels,
         user_channel_id: result.user_channel_id,

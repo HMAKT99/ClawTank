@@ -22,7 +22,8 @@ use crate::access::SessionTracker;
 use crate::display::TestPatternDisplay;
 use crate::events::{CoreEvent, EventSink};
 use crate::gfx::GfxFactory;
-use crate::input::InputLogger;
+use crate::input::{InputForwarder, InputSink};
+use crate::pointer::PointerHub;
 use crate::tls::TlsIdentity;
 use crate::video::VideoHub;
 
@@ -47,9 +48,15 @@ pub struct ServerHandle {
     thread: Option<JoinHandle<()>>,
     local_addr: SocketAddr,
     video: Arc<VideoHub>,
+    pointer: Arc<PointerHub>,
 }
 
 impl ServerHandle {
+    /// Where the host publishes cursor shapes.
+    pub fn pointer(&self) -> &Arc<PointerHub> {
+        &self.pointer
+    }
+
     /// Where the host submits encoded video.
     pub fn video(&self) -> &Arc<VideoHub> {
         &self.video
@@ -85,7 +92,8 @@ impl Drop for ServerHandle {
 }
 
 /// Starts the server. Returns once the listener is bound; events arrive on `sink`.
-pub fn start(config: ServerConfig, sink: EventSink) -> Result<ServerHandle> {
+/// Input events arrive on `input`, on a server thread.
+pub fn start(config: ServerConfig, sink: EventSink, input: InputSink) -> Result<ServerHandle> {
     let acceptor = config.identity.acceptor()?;
     let public_key = config.identity.public_key()?;
 
@@ -101,6 +109,8 @@ pub fn start(config: ServerConfig, sink: EventSink) -> Result<ServerHandle> {
 
     let tracker = Arc::new(SessionTracker::new(config.lan_only, sink.clone()));
     let video = Arc::new(VideoHub::new(sink.clone()));
+    let pointer = Arc::new(PointerHub::default());
+    let thread_pointer = Arc::clone(&pointer);
     let thread_video = Arc::clone(&video);
     let (shutdown, mut shutdown_rx) = watch::channel(false);
     // RdpServer is not Send, so it is built on the server thread; its quit sender comes back here.
@@ -117,10 +127,11 @@ pub fn start(config: ServerConfig, sink: EventSink) -> Result<ServerHandle> {
             let mut server = RdpServer::builder()
                 .with_addr(local_addr)
                 .with_hybrid(acceptor, public_key)
-                .with_input_handler(InputLogger::default())
+                .with_input_handler(InputForwarder::new(input))
                 .with_display_handler(TestPatternDisplay::new(
                     Arc::clone(&tracker),
                     Arc::clone(&thread_video),
+                    thread_pointer,
                 ))
                 .with_honor_client_desktop_size(true)
                 .with_gfx_factory(Some(Box::new(GfxFactory::new(Arc::clone(&thread_video)))))
@@ -182,5 +193,6 @@ pub fn start(config: ServerConfig, sink: EventSink) -> Result<ServerHandle> {
         thread: Some(thread),
         local_addr,
         video,
+        pointer,
     })
 }

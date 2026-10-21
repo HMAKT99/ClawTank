@@ -10,6 +10,11 @@
 #include <stddef.h>
 
 /**
+ * Largest shape every client accepts without the Large Pointer capability.
+ */
+#define MAX_POINTER_SIDE 96
+
+/**
  * Result code for FFI calls.
  */
 typedef enum {
@@ -93,6 +98,40 @@ typedef enum {
 } CtEventKind;
 
 /**
+ * Kind of a client input event.
+ */
+typedef enum {
+  /**
+   * `code` = Set-1 scancode, `extended` = 0xE0 prefix, `down`.
+   */
+  CT_INPUT_KIND_KEY = 0,
+  /**
+   * `code` = UTF-16 code unit, `down`.
+   */
+  CT_INPUT_KIND_UNICODE = 1,
+  /**
+   * `flags` = lock keys (bit 0 Scroll, 1 Num, 2 Caps, 3 Kana).
+   */
+  CT_INPUT_KIND_SYNC = 2,
+  /**
+   * `x`, `y` = absolute position in desktop (session) pixels.
+   */
+  CT_INPUT_KIND_MOVE = 3,
+  /**
+   * `x`, `y` = relative motion.
+   */
+  CT_INPUT_KIND_REL_MOVE = 4,
+  /**
+   * `button` (0 left, 1 right, 2 middle, 3 X1/back, 4 X2/forward), `down`.
+   */
+  CT_INPUT_KIND_BUTTON = 5,
+  /**
+   * `y` = vertical, `x` = horizontal wheel units (120 per notch; +y away from user, +x right).
+   */
+  CT_INPUT_KIND_WHEEL = 6,
+} CtInputKind;
+
+/**
  * Result of `ct_server_submit_h264`.
  */
 typedef enum {
@@ -168,6 +207,26 @@ typedef struct {
  * Receives server events. `detail` is a NUL-terminated UTF-8 string valid only for the call.
  */
 typedef void (*CtEventCallback)(void *ctx, CtEventKind kind, const char *detail);
+
+/**
+ * One client input event. Fields not used by `kind` are zero.
+ */
+typedef struct {
+  CtInputKind kind;
+  uint16_t code;
+  bool extended;
+  bool down;
+  uint8_t button;
+  uint32_t flags;
+  int32_t x;
+  int32_t y;
+} CtInputEvent;
+
+/**
+ * Receives input events on a core thread. `event` is valid only for the call. Keep it fast:
+ * it runs on the session's network task.
+ */
+typedef void (*CtInputCallback)(void *ctx, const CtInputEvent *event);
 
 /**
  * Video counters for the current session.
@@ -250,6 +309,7 @@ void ct_string_free(char *s);
  */
 CtServer *ct_server_start(const CtServerConfig *config,
                           CtEventCallback callback,
+                          CtInputCallback input_callback,
                           void *ctx,
                           CtStatus *out_status);
 
@@ -283,6 +343,30 @@ CtSubmitResult ct_server_submit_h264(const CtServer *server,
                                      const uint8_t *data,
                                      size_t len,
                                      bool keyframe);
+
+/**
+ * Sets the client-side cursor shape: 32 bpp **BGRA, straight alpha, rows bottom-up**,
+ * at most 96×96, hotspot inside. Returns false for invalid input. Sessions starting later
+ * receive the latest shape.
+ *
+ * # Safety
+ * `server` must be a live pointer from `ct_server_start`; `bgra` must point to `len` bytes.
+ */
+bool ct_server_set_pointer(const CtServer *server,
+                           const uint8_t *bgra,
+                           size_t len,
+                           uint16_t width,
+                           uint16_t height,
+                           uint16_t hot_x,
+                           uint16_t hot_y);
+
+/**
+ * Hides the client-side cursor.
+ *
+ * # Safety
+ * `server` must be null or a live pointer from `ct_server_start`.
+ */
+void ct_server_hide_pointer(const CtServer *server);
 
 /**
  * True if a frame submitted now would be sent (session ready, no backpressure). Lets the

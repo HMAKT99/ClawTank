@@ -65,6 +65,7 @@ fn main() -> clawtank_core::Result<()> {
             };
             println!("EVENT {line}");
         }),
+        Arc::new(|event| println!("INPUT {event:?}")),
     )?;
 
     loop {

@@ -31,7 +31,12 @@ fn start_server(bind: SocketAddr) -> (ServerHandle, Events, TlsIdentity) {
         identity: identity.clone(),
         lan_only: true,
     };
-    let handle = server::start(config, Arc::new(move |e| log.lock().unwrap().push(e))).unwrap();
+    let handle = server::start(
+        config,
+        Arc::new(move |e| log.lock().unwrap().push(e)),
+        Arc::new(|_| {}),
+    )
+    .unwrap();
     (handle, events, identity)
 }
 

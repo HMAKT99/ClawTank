@@ -15,6 +15,7 @@ pub mod ffi;
 pub mod gfx;
 pub mod input;
 pub mod logging;
+pub mod pointer;
 pub mod server;
 pub mod test_pattern;
 pub mod tls;

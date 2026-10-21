@@ -14,4 +14,4 @@ prefix_with_name = true
 rename_variants = "ScreamingSnakeCase"
 
 [export]
-include = ["CtStatus", "CtSubmitResult", "CtVideoStats"]
+include = ["CtStatus", "CtSubmitResult", "CtVideoStats", "CtInputEvent", "CtInputKind"]
