@@ -6,13 +6,15 @@ import Combine
 import Foundation
 
 enum QualityPreset: String, CaseIterable, Identifiable, Sendable {
+    // `sharpText` keeps its stored name for existing settings; it's shown as "High quality":
+    // measured, extra bit rate does not sharpen text (4:2:0 colour subsampling does; ADR-021).
     case balanced, sharpText, lowBandwidth
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .balanced: "Balanced"
-        case .sharpText: "Sharp text (more bandwidth)"
+        case .sharpText: "High quality (more bandwidth)"
         case .lowBandwidth: "Low bandwidth"
         }
     }

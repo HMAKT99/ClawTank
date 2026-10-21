@@ -108,3 +108,15 @@ Format: context → decision → consequences. Newest last. Status is *Accepted*
 
 Changes apply live with `VTSessionSetProperty`, with no keyframe.
 **Consequences.** Needs tuning on real Wi-Fi (human checklist). The menu shows rtt, target rate and a congestion flag.
+
+## ADR-021 — AVC444: measured, no-go for v1
+**Measurement** (`scratchpad/chroma.swift`, M2, our encoder settings): small coloured text rendered at 1× and 2×, encoded with H.264 4:2:0, then decoded.
+- Text-region error at 1× is 15.2/255, of which **13.5 is colour (chroma)**. At 2× (Retina virtual display) it's 9.4, colour 8.5.
+- **Raising the bit rate 1.6× or 3× changes nothing** (13.5 → 13.6): the loss is structural chroma subsampling, not compression.
+- Visually, black text is indistinguishable; red and green text at 1× is slightly softer and less saturated, but readable.
+
+**Decision.** Chosen by the maintainer: no AVC444 in v1.
+- Crisp text comes from Retina sessions (HiDPI virtual display, Phase 4), which cut colour error by about 40%.
+- The "Sharp text" preset is renamed "High quality (more bandwidth)", since bit rate doesn't sharpen text.
+
+**Later.** Build AVC444: chroma packing per MS-RDPEGFX 3.3.8.3 on the GPU, two-view encoding via `send_avc444_frame`. Validate it with FreeRDP `/gfx:avc444` decoding in CI before shipping.

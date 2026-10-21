@@ -4,6 +4,16 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Phase 7 — Files and quality (2026-10-21)
+- Copy and paste files and folders both ways over the clipboard. Client → Mac lands in ~/Downloads/ClawTank and is put on the pasteboard for Finder; Mac → client serves Finder copies.
+  - Paths are re-sanitized, and free disk space is checked first.
+  - Measured live with a 1 GiB folder: 207 MB/s in, 244 MB/s out (loopback), with identical SHA-256.
+- IronRDP #2148 patched in the vendored server, so clipboard lock and file timeouts are now driven.
+- Adaptive bitrate from EGFX frame acks (send→ack latency, frames in flight, skips). The menu shows rtt and the target rate.
+- "Sharp text" preset renamed "High quality": measurement showed bit rate doesn't sharpen text (ADR-021).
+- Deferred: multi-monitor (ADR-019) and AVC444 (ADR-021). Both are maintainer decisions backed by the findings above.
+- CI: the FreeRDP smoke test now stops the client process itself.
+
 ### Phase 6 — Audio and clipboard (2026-10-21)
 - System audio goes to the client over RDPSND: 16-bit PCM stereo at 48 or 44.1 kHz, captured with ScreenCaptureKit, excluding ClawTank's own sound. Silence isn't sent, and there's an optional local mute during sessions.
 - Two-way clipboard over CLIPRDR: plain text (UTF-16, CRLF), Rich Text Format, HTML (CF_HTML) and images (PNG and CF_DIB). The client's formats are fetched in full when it copies, then written to the pasteboard together, with no echo loops.

@@ -75,3 +75,8 @@ Live, 2026-10-21, loopback, `files_demo` (examples/files_demo.rs) acting as the 
 - ✅ **Mac → client, 1 GiB folder** (nested folder plus 3 files, copied in Finder via the clipboard): 4.2 s (244 MB/s). All SHA-256 hashes matched the source.
 - Found and fixed: relative paths doubled under symlinked folders. File requests are now served off the main thread. (An apparent 23 ms per request turned out to be the demo client's own loop.)
 - [ ] Human: mstsc / Windows App: copy a folder in Finder and paste it in Explorer, and the reverse (it lands in ~/Downloads/ClawTank and is put on the clipboard). Large copy on Wi-Fi.
+
+## Phase 7 — quality
+- Adaptive bitrate: policy unit tests, plus an end-to-end check that the client acks frames and latency is measured. [ ] Human: Wi-Fi session, then move away from the router; the menu should show "(congested)" and a lower target, then recover.
+- AVC444 measured, no-go (ADR-021): 4:2:0 colour error on small coloured text is 13.5/255 at 1× and 8.5 at 2×, independent of bit rate.
+- Multi-monitor deferred (ADR-019).
