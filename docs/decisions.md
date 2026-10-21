@@ -20,6 +20,7 @@ Format: context → decision → consequences. Newest last. Status is *Accepted*
 ## ADR-004 — Virtual displays via private `CGVirtualDisplay`, isolated and optional
 **Context.** Headless Macs and resolution matching need a virtual display. No public API exists. `CGVirtualDisplay` (CoreGraphics, private) works on macOS 15.6 (see docs/research/virtual-display.md).
 **Decision.** Access it only through a `VirtualDisplayProvider` protocol. Feature-detect with `NSClassFromString`, guard every call, and fall back to capturing the physical display. Sweep stale displays at launch. Interface declarations live in a single ObjC header.
+**Update (Phase 4, measured on macOS 15.6).** Readiness and resize checks use `CGDisplayBounds`, because `CGDisplayCopyDisplayMode` often returns nil for virtual displays. Retina→1x doesn't apply in place, so `DisplayService` recreates the display; other transitions resize in place. A display released earlier in the same process doesn't affect later ones. No launch-time sweep is needed: displays die with the process.
 **Consequences.** Not App-Store-eligible (already a non-goal). It may break in a future macOS, which the fallback limits to a degraded experience rather than an outage. We test on each macOS beta.
 
 ## ADR-005 — Minimum macOS 14 Sonoma

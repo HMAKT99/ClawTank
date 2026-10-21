@@ -4,6 +4,20 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Phase 4 — Virtual display and headless (2026-10-21)
+- Virtual display at the client's exact pixel size (Retina/HiDPI when the client is scaled ≥150% or sends a Retina-sized desktop), via the private `CGVirtualDisplay` behind `VirtualDisplayProvider`, with fallback to the physical display.
+- Display setting:
+  - Automatic: virtual when headless, physical otherwise.
+  - Virtual.
+  - Physical.
+- Live resize over Display Control. The virtual display is reconfigured in place (recreated for Retina→1x), and capture and encoding restart on a serialized chain. Frames for the old size are refused.
+- The virtual display is removed at disconnect and dies with the process, so a crash can't leave one behind.
+- Tests:
+  - Rust resize end-to-end.
+  - DisplayService with a fake provider.
+  - Opt-in real virtual-display test.
+  - `probe --resize-demo`: 172 ms from resize request to first new-size frame.
+
 ### Phase 3 — Input (2026-10-21)
 - Keyboard: positional scancode map (so Mac input sources decide the layout), all modifiers, Caps Lock, auto-repeat, F1–F20, navigation and keypad, ISO/JIS keys, media keys, and Unicode events including surrogate pairs. Optional Ctrl↔⌘ swap in the menu.
 - Mouse: absolute and relative motion mapped through the same aspect-fit rect used for capture; left, right, middle, back and forward buttons; drags; double and triple clicks; smooth vertical and horizontal pixel scrolling.

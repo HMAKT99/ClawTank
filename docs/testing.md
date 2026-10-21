@@ -42,3 +42,11 @@ Automated live test (it takes over the mouse and keyboard for about 15 s; ask fi
 - ✅ 3 wheel notches gave 3 continuous pixel scrolls (−40 each); the middle click arrived as button 2.
 - ✅ Cursor shapes reached the client: arrow 17×24 (hotspot 4,4) and I-beam 9×18 (hotspot 4,9) over text, correct orientation.
 - [ ] Human (Windows App / mstsc): type in a non-US layout with the same layout selected on the Mac; ⌘C/⌘V/⌘Tab (Windows key = ⌘ by default, or turn on "Swap Ctrl and ⌘"); trackpad scrolling feel; resize and hand cursors.
+
+## Phase 4 — virtual display and resize
+Results, 2026-10-21, M2 MacBook Air, macOS 15.6.1:
+- ✅ Opt-in real-display test (`TEST_RUNNER_CLAWTANK_VD_TESTS=1 make test-app`): create 2560×1600 @2× (1280×800 pt), resize to 2880×1800 @2× in place, Retina→1× correctly refused (recreate path), remove, then a second display in the same process works.
+- ✅ Live session with Display = Virtual (`probe … 1512x982 --resize-demo 1280x800@100 DIR`): first frame 1.15 s after connect (including display creation) showing the virtual desktop (wallpaper and menu bar only) at exactly 1512×982. Resize to 1280×800 over Display Control: **first new-size frame 172 ms** after the request (target ≈ 1 s). Both keyframes decode. Virtual display gone after disconnect.
+- Findings: `CGDisplayCopyDisplayMode` is unreliable for virtual displays (often nil), so we use `CGDisplayBounds`. Retina→1× doesn't apply in place, so we recreate.
+- [ ] Human: headless Mac mini (no monitor, no dummy plug) with Display = Automatic. Connect from a 14"/16" MacBook (Windows App, Retina option on) and expect a crisp native-resolution desktop. Resize the client window and expect the desktop to follow within about 1 s.
+- [ ] Human: `make spike-vd` on the Mac mini (Phase 0 item).
