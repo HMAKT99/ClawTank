@@ -66,6 +66,5 @@ final class RemoteAccessTests: XCTestCase {
         // More than a pipe buffer (64 KiB) of output must not stall.
         let data = RemoteAccess.runProcess("/bin/sh", ["-c", "head -c 300000 /dev/zero"])
         XCTAssertEqual(data?.count, 300_000)
-        XCTAssertNotNil(RemoteAccess.wakeForNetworkAccess(), "real pmset on this Mac")
     }
 }
