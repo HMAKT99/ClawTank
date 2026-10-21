@@ -69,7 +69,8 @@ final class VideoSession: @unchecked Sendable {
             onStop: { [weak self] _ in self?.log.notice("Capture ended") })
         try await capture.start(.init(
             contentWidth: contentWidth, contentHeight: contentHeight,
-            codedWidth: codedWidth, codedHeight: codedHeight))
+            codedWidth: codedWidth, codedHeight: codedHeight,
+            displaySize: ScreenCapture.capturedDisplay().bounds.size))
         self.capture = capture
     }
 

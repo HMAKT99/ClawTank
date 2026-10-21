@@ -100,8 +100,9 @@ final class RdpServer: @unchecked Sendable {
     /// The bound port (useful when `port` was 0).
     let port: UInt16
 
-    init(configuration config: Configuration, onEvent: @escaping @Sendable (Event) -> Void) throws {
-        let sink = Unmanaged.passRetained(RdpEventSink(onEvent))
+    init(configuration config: Configuration, onEvent: @escaping @Sendable (Event) -> Void,
+         onInput: @escaping @Sendable (ClientInput) -> Void = { _ in }) throws {
+        let sink = Unmanaged.passRetained(RdpEventSink(onEvent, onInput))
         var status = CT_STATUS_OK
         let handle: OpaquePointer? = config.bindIP.withCString { bindIP in
             config.username.withCString { user in
@@ -113,7 +114,8 @@ final class RdpServer: @unchecked Sendable {
                                 cert_der: cert.bindMemory(to: UInt8.self).baseAddress, cert_der_len: cert.count,
                                 key_der: key.bindMemory(to: UInt8.self).baseAddress, key_der_len: key.count,
                                 lan_only: config.lanOnly)
-                            return ct_server_start(&native, rdpServerEventCallback, sink.toOpaque(), &status)
+                            return ct_server_start(&native, rdpServerEventCallback, rdpServerInputCallback,
+                                                   sink.toOpaque(), &status)
                         }
                     }
                 }
@@ -160,6 +162,18 @@ final class RdpServer: @unchecked Sendable {
         }
     }
 
+    /// Publishes the cursor shape (BGRA, straight alpha, bottom-up rows).
+    @discardableResult
+    func setPointer(_ shape: CursorPublisher.Shape) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let handle else { return false }
+        return shape.bgra.withUnsafeBytes { bytes in
+            ct_server_set_pointer(handle, bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count,
+                                  UInt16(shape.width), UInt16(shape.height), UInt16(shape.hotX), UInt16(shape.hotY))
+        }
+    }
+
     /// False while there's no graphics session or the client is behind (skip encoding).
     var canAcceptVideo: Bool {
         lock.lock()
@@ -195,10 +209,33 @@ final class RdpServer: @unchecked Sendable {
     }
 }
 
-/// Holds an `RdpServer`'s event handler for the native server's lifetime (passed as `ctx`).
+/// Holds an `RdpServer`'s handlers for the native server's lifetime (passed as `ctx`).
 private final class RdpEventSink: @unchecked Sendable {
     let handler: @Sendable (RdpServer.Event) -> Void
-    init(_ handler: @escaping @Sendable (RdpServer.Event) -> Void) { self.handler = handler }
+    let input: @Sendable (ClientInput) -> Void
+    init(_ handler: @escaping @Sendable (RdpServer.Event) -> Void,
+         _ input: @escaping @Sendable (ClientInput) -> Void) {
+        self.handler = handler
+        self.input = input
+    }
+}
+
+/// C input trampoline: converts `CtInputEvent` and forwards it. Runs on a core thread.
+private func rdpServerInputCallback(ctx: UnsafeMutableRawPointer?, event: UnsafePointer<CtInputEvent>?) {
+    guard let ctx, let event = event?.pointee else { return }
+    let sink = Unmanaged<RdpEventSink>.fromOpaque(ctx).takeUnretainedValue()
+    let input: ClientInput? = switch event.kind {
+    case CT_INPUT_KIND_KEY: .key(scancode: UInt8(truncatingIfNeeded: event.code), extended: event.extended,
+                                 down: event.down)
+    case CT_INPUT_KIND_UNICODE: .unicode(event.code, down: event.down)
+    case CT_INPUT_KIND_SYNC: .sync(capsLock: event.flags & 0x4 != 0)
+    case CT_INPUT_KIND_MOVE: .move(x: Int(event.x), y: Int(event.y))
+    case CT_INPUT_KIND_REL_MOVE: .relativeMove(dx: Int(event.x), dy: Int(event.y))
+    case CT_INPUT_KIND_BUTTON: .button(Int(event.button), down: event.down)
+    case CT_INPUT_KIND_WHEEL: .wheel(vertical: Int(event.y), horizontal: Int(event.x))
+    default: nil
+    }
+    if let input { sink.input(input) }
 }
 
 /// C callback trampoline: decodes the event and forwards it to the `RdpEventSink` in `ctx`.

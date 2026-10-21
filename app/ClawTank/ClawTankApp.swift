@@ -2,7 +2,8 @@
 //
 // Starts the RDP server at launch (TLS + NLA) and shows how to connect: address, username,
 // password and certificate fingerprint. While a client is connected it streams the main
-// display (Phase 2) and shows live video stats. See docs/architecture.md.
+// display (Phase 2), injects the client's keyboard and mouse and sends cursor shapes
+// (Phase 3), and shows live video stats. See docs/architecture.md.
 
 import SwiftUI
 
@@ -43,6 +44,7 @@ struct StatusMenu: View {
             Text("Video: \(video)")
         }
         Toggle("Show Stats Overlay", isOn: $server.showsStatsOverlay)
+        Toggle("Swap Ctrl and ⌘", isOn: $server.swapControlCommand)
         Divider()
         Button("Copy Address (\(server.hostName))") { server.copyAddress() }
         Text("Username: \(server.username)")

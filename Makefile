@@ -31,12 +31,17 @@ test: test-core test-app ## Run all unit tests
 test-core:
 	cd core && cargo test
 
+# Each run replaces one result bundle; Xcode would otherwise keep every run under Logs/ (GBs).
+RESULTS := $(DERIVED)/TestResults.xcresult
+
 test-app: core project
-	xcodebuild -project app/ClawTank.xcodeproj -scheme ClawTank -configuration Debug \
+	rm -rf $(RESULTS) $(DERIVED)/Logs/Test
+	xcodebuild -resultBundlePath $(RESULTS) -project app/ClawTank.xcodeproj -scheme ClawTank -configuration Debug \
 		-derivedDataPath $(DERIVED) -destination "platform=macOS,arch=$(ARCH)" ARCHS=$(ARCH) -quiet test
 
 bench: core project ## Encoder benchmark (2560x1600 @ 60 fps): latency, bitrate, fps
-	TEST_RUNNER_CLAWTANK_BENCH=1 xcodebuild -project app/ClawTank.xcodeproj -scheme ClawTank -configuration Debug \
+	rm -rf $(RESULTS) $(DERIVED)/Logs/Test
+	TEST_RUNNER_CLAWTANK_BENCH=1 xcodebuild -resultBundlePath $(RESULTS) -project app/ClawTank.xcodeproj -scheme ClawTank -configuration Debug \
 		-derivedDataPath $(DERIVED) -destination "platform=macOS,arch=$(ARCH)" ARCHS=$(ARCH) \
 		-only-testing:ClawTankTests/EncoderBenchmarkTests test 2>&1 | grep -E "BENCH|error|TEST (SUCCEEDED|FAILED)"
 

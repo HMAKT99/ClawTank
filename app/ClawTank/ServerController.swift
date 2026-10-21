@@ -2,6 +2,7 @@
 // Core events arrive on a Rust thread and are applied on the main actor.
 
 import AppKit
+import ApplicationServices
 import ClawTankCore
 import Foundation
 import os
@@ -35,6 +36,13 @@ final class ServerController: ObservableObject {
     @Published var showsStatsOverlay = false {
         didSet { overlayFlag.set(showsStatsOverlay) }
     }
+    /// Ctrl ↔ ⌘ swap for clients whose users press Ctrl+C to copy (persisted).
+    @Published var swapControlCommand = UserDefaults.standard.bool(forKey: "swapControlCommand") {
+        didSet {
+            UserDefaults.standard.set(swapControlCommand, forKey: "swapControlCommand")
+            input.setSwapControlCommand(swapControlCommand)
+        }
+    }
 
     let username: String
     let hostName: String
@@ -47,6 +55,8 @@ final class ServerController: ObservableObject {
     private var statsTimer: Timer?
     private var lastCounters = VideoSession.Counters()
     private let overlayFlag = AtomicFlag()
+    private let input = InputPipeline(swapControlCommand: UserDefaults.standard.bool(forKey: "swapControlCommand"))
+    private var cursor: CursorPublisher?
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "server")
 
     init(security: SecurityService = SecurityService(), port: UInt16 = ServerController.defaultPort) {
@@ -66,9 +76,10 @@ final class ServerController: ObservableObject {
             fingerprint = identity.fingerprint
             let configuration = RdpServer.Configuration(
                 port: port, username: username, password: password, identity: identity)
-            server = try RdpServer(configuration: configuration) { [weak self] event in
+            let input = self.input
+            server = try RdpServer(configuration: configuration, onEvent: { [weak self] event in
                 Task { @MainActor in self?.handle(event) }
-            }
+            }, onInput: { input.handle($0) })
             status = .listening(port: server?.port ?? port)
             log.info("Server started on port \(self.port)")
         } catch RdpServer.StartError.failed(let code) where code == CT_STATUS_BIND_FAILED.rawValue {
@@ -79,6 +90,7 @@ final class ServerController: ObservableObject {
     }
 
     func stop() {
+        stopInput()
         stopVideo()
         server?.stop()
         server = nil
@@ -117,7 +129,9 @@ final class ServerController: ObservableObject {
         case .clientConnected(let peer):
             status = .connected(peer: Self.ipOnly(peer))
             lastNotice = nil
+            startInput()
         case .clientDisconnected:
+            stopInput()
             stopVideo()
             status = .listening(port: server?.port ?? port)
         case .connectionFailed(let peer, let error):
@@ -135,6 +149,29 @@ final class ServerController: ObservableObject {
         }
     }
 
+    // MARK: - Input and cursor
+
+    private func startInput() {
+        // Shows the system prompt the first time; input is ignored until granted.
+        // "AXTrustedCheckOptionPrompt" is the value of kAXTrustedCheckOptionPrompt (a C global).
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        if !AXIsProcessTrustedWithOptions(options) {
+            lastNotice = "Grant Accessibility to ClawTank in System Settings to enable keyboard and mouse"
+            log.notice("Accessibility not granted; input is ignored")
+        }
+        guard let server, cursor == nil else { return }
+        let input = self.input
+        let publisher = CursorPublisher(scale: { input.currentScale() }, send: { server.setPointer($0) })
+        publisher.start()
+        cursor = publisher
+    }
+
+    private func stopInput() {
+        input.releaseAll()
+        cursor?.stop()
+        cursor = nil
+    }
+
     // MARK: - Video
 
     private func startVideo(width: Int, height: Int) {
@@ -146,6 +183,7 @@ final class ServerController: ObservableObject {
             log.notice("Screen Recording not granted; client sees the test pattern")
             return
         }
+        input.setSession(width: width, height: height)
         let flag = overlayFlag
         let session = VideoSession(server: server, width: width, height: height) { flag.get() }
         video = session

@@ -6,3 +6,6 @@ excluded:
 line_length:
   warning: 120
   error: 160
+identifier_name:
+  # Coordinates and loop indices read better short.
+  excluded: [x, y, dx, dy, i, id]

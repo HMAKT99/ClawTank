@@ -17,7 +17,18 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         var codedWidth: Int
         var codedHeight: Int
         var frameRate: Int = 60
-        var showsCursor = true
+        /// Off when the client draws the cursor itself from shapes we send (Phase 3).
+        var showsCursor = false
+        /// Display size in points; content is fitted (aspect preserved, centred) into the session.
+        var displaySize = CGSize(width: 1, height: 1)
+
+        /// Where the display lands inside the session rectangle. Matches `CoordinateMapper`.
+        var contentRect: CGRect {
+            let scale = min(Double(contentWidth) / displaySize.width, Double(contentHeight) / displaySize.height)
+            let size = CGSize(width: displaySize.width * scale, height: displaySize.height * scale)
+            return CGRect(x: (Double(contentWidth) - size.width) / 2, y: (Double(contentHeight) - size.height) / 2,
+                          width: size.width, height: size.height)
+        }
     }
 
     enum CaptureError: Error {
@@ -40,9 +51,10 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         let cfg = SCStreamConfiguration()
         cfg.width = config.codedWidth
         cfg.height = config.codedHeight
-        cfg.destinationRect = CGRect(x: 0, y: 0, width: config.contentWidth, height: config.contentHeight)
+        // We compute the aspect-fit rect ourselves so input mapping matches it exactly.
+        cfg.destinationRect = config.contentRect
         cfg.scalesToFit = true
-        cfg.preservesAspectRatio = true
+        cfg.preservesAspectRatio = false
         cfg.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         cfg.colorMatrix = kCVImageBufferYCbCrMatrix_ITU_R_709_2
         cfg.colorSpaceName = CGColorSpace.sRGB
@@ -51,6 +63,12 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         cfg.showsCursor = config.showsCursor
         cfg.capturesAudio = false
         return cfg
+    }
+
+    /// The display that will be captured (the main display) and its bounds in global points.
+    static func capturedDisplay() -> (id: CGDirectDisplayID, bounds: CGRect) {
+        let id = CGMainDisplayID()
+        return (id, CGDisplayBounds(id))
     }
 
     func start(_ config: Configuration) async throws {
