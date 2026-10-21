@@ -13,6 +13,7 @@ use std::num::{NonZeroU16, NonZeroUsize};
 use std::sync::Arc;
 
 use bytes::Bytes;
+use ironrdp_displaycontrol::pdu::DisplayControlMonitorLayout;
 use ironrdp_server::{
     BitmapUpdate, DesktopSize, DisplayUpdate, PixelFormat, RdpServerDisplay,
     RdpServerDisplayUpdates,
@@ -78,6 +79,30 @@ impl RdpServerDisplay for TestPatternDisplay {
             .set_session_size(self.size.width, self.size.height);
         info!(?client_size, chosen = ?self.size, "Client requested desktop size");
         self.size
+    }
+
+    /// Display Control (MS-RDPEDISP): the client window was resized or moved to another monitor.
+    /// We follow the primary monitor; the host resizes its virtual display and restarts video.
+    fn request_layout(&mut self, layout: DisplayControlMonitorLayout) {
+        let Some(monitor) = layout
+            .monitors()
+            .iter()
+            .find(|m| m.is_primary())
+            .or_else(|| layout.monitors().first())
+        else {
+            return;
+        };
+        let (width, height) = monitor.dimensions();
+        let requested = DesktopSize {
+            // MS-RDPEDISP 2.2.2.2.1: width must be even.
+            width: u16::try_from(width & !1).unwrap_or(MAX_WIDTH),
+            height: u16::try_from(height).unwrap_or(MAX_HEIGHT),
+        };
+        let size = clamp_size(requested);
+        let scale = monitor.desktop_scale_factor().unwrap_or(100);
+        info!(?size, scale, "Client requested new layout");
+        self.size = size;
+        self.video.request_resize(size.width, size.height, scale);
     }
 
     async fn updates(&mut self) -> anyhow::Result<Box<dyn RdpServerDisplayUpdates>> {

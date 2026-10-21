@@ -44,7 +44,7 @@ async fn submitted_h264_reaches_an_egfx_client() {
     .unwrap();
     let video = Arc::clone(server.video());
     assert_eq!(
-        video.submit_h264(FAKE_IDR, true),
+        video.submit_h264(FAKE_IDR, true, 1512, 982),
         SubmitResult::NotReady,
         "no session yet"
     );
@@ -87,9 +87,18 @@ async fn submitted_h264_reaches_an_egfx_client() {
             }
             if !submitted {
                 // The decoder chain must start at an IDR.
-                assert_eq!(video.submit_h264(FAKE_P, false), SubmitResult::NeedKeyframe);
-                assert_eq!(video.submit_h264(FAKE_IDR, true), SubmitResult::Sent);
-                assert_eq!(video.submit_h264(FAKE_P, false), SubmitResult::Sent);
+                assert_eq!(
+                    video.submit_h264(FAKE_P, false, 1512, 982),
+                    SubmitResult::NeedKeyframe
+                );
+                assert_eq!(
+                    video.submit_h264(FAKE_IDR, true, 1512, 982),
+                    SubmitResult::Sent
+                );
+                assert_eq!(
+                    video.submit_h264(FAKE_P, false, 1512, 982),
+                    SubmitResult::Sent
+                );
                 submitted = true;
             }
             recorder.frame_count() >= 2
@@ -129,7 +138,7 @@ async fn submitted_h264_reaches_an_egfx_client() {
             .any(|e| matches!(e, CoreEvent::VideoStop))
     );
     assert_eq!(
-        video.submit_h264(FAKE_IDR, true),
+        video.submit_h264(FAKE_IDR, true, 1512, 982),
         SubmitResult::NotReady,
         "session is gone"
     );

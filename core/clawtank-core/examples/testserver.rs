@@ -62,6 +62,11 @@ fn main() -> clawtank_core::Result<()> {
                 CoreEvent::Error(e) => format!("error {e}"),
                 CoreEvent::VideoStart { width, height } => format!("video-start {width}x{height}"),
                 CoreEvent::VideoStop => "video-stop".to_owned(),
+                CoreEvent::VideoResize {
+                    width,
+                    height,
+                    scale_percent,
+                } => format!("video-resize {width}x{height}@{scale_percent}"),
             };
             println!("EVENT {line}");
         }),

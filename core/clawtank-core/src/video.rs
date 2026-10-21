@@ -127,6 +127,28 @@ impl VideoHub {
         self.frames_acked.store(0, Ordering::Release);
     }
 
+    /// The client asked for a new desktop size (Display Control). The next keyframe at that size
+    /// recreates the surface (ResetGraphics); frames still arriving at the old size are refused.
+    pub fn request_resize(&self, width: u16, height: u16, scale_percent: u32) {
+        if self.session_size() == (width, height) {
+            return;
+        }
+        self.set_session_size(width, height);
+        {
+            let mut inner = self.lock();
+            inner.surface = None;
+            inner.need_keyframe = true;
+        }
+        if self.channel_open.load(Ordering::Acquire) {
+            info!(width, height, scale_percent, "Resizing video");
+            (self.sink)(CoreEvent::VideoResize {
+                width,
+                height,
+                scale_percent,
+            });
+        }
+    }
+
     /// Handler callback: capabilities negotiated, frames may flow.
     pub(crate) fn on_ready(&self) {
         let (w, h) = self.session_size();
@@ -188,9 +210,21 @@ impl VideoHub {
         }
     }
 
-    /// Queues one H.264 access unit (Annex-B, with SPS/PPS on keyframes).
-    pub fn submit_h264(&self, data: &[u8], keyframe: bool) -> SubmitResult {
+    /// Queues one H.264 access unit (Annex-B, with SPS/PPS on keyframes) encoded for a
+    /// `width`×`height` desktop. Frames for any other size (in flight across a resize) are
+    /// refused with `NotReady`, since they would not fit the client's surface.
+    pub fn submit_h264(
+        &self,
+        data: &[u8],
+        keyframe: bool,
+        width: u16,
+        height: u16,
+    ) -> SubmitResult {
         if data.is_empty() || !self.channel_open.load(Ordering::Acquire) {
+            return SubmitResult::NotReady;
+        }
+        if (width, height) != self.session_size() {
+            debug!(width, height, session = ?self.session_size(), "Dropping frame for a stale size");
             return SubmitResult::NotReady;
         }
         let mut inner = self.lock();

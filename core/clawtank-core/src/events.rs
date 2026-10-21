@@ -21,6 +21,13 @@ pub enum CoreEvent {
     ConnectionFailed { peer: SocketAddr, error: String },
     /// The client's graphics pipeline is ready: start capturing/encoding at this size.
     VideoStart { width: u16, height: u16 },
+    /// The client resized its desktop: restart capture/encoding at this size.
+    /// `scale_percent` is the client's desktop scale (100 = 1x, 200 = Retina).
+    VideoResize {
+        width: u16,
+        height: u16,
+        scale_percent: u32,
+    },
     /// The graphics pipeline closed: stop capturing/encoding.
     VideoStop,
     /// The server loop exited; no more events follow.

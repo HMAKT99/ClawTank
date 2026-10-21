@@ -95,6 +95,10 @@ typedef enum {
    * Graphics pipeline closed: stop capture + encode. Detail: empty.
    */
   CT_EVENT_KIND_VIDEO_STOP = 8,
+  /**
+   * Client resized: restart capture + encode. Detail: `"WIDTHxHEIGHT@SCALE"` (scale in %).
+   */
+  CT_EVENT_KIND_VIDEO_RESIZE = 9,
 } CtEventKind;
 
 /**
@@ -331,7 +335,9 @@ void ct_server_stop(CtServer *server);
 uint16_t ct_server_port(const CtServer *server);
 
 /**
- * Submits one H.264 access unit (Annex-B byte stream; keyframes must carry SPS/PPS).
+ * Submits one H.264 access unit (Annex-B byte stream; keyframes must carry SPS/PPS),
+ * encoded for a `width`×`height` desktop (the session size from VideoStart/VideoResize;
+ * frames for an outdated size are refused).
  * The bytes are copied before returning. Thread-safe; never blocks on the network.
  * Must not be called from inside the event callback.
  *
@@ -342,7 +348,9 @@ uint16_t ct_server_port(const CtServer *server);
 CtSubmitResult ct_server_submit_h264(const CtServer *server,
                                      const uint8_t *data,
                                      size_t len,
-                                     bool keyframe);
+                                     bool keyframe,
+                                     uint16_t width,
+                                     uint16_t height);
 
 /**
  * Sets the client-side cursor shape: 32 bpp **BGRA, straight alpha, rows bottom-up**,

@@ -15,6 +15,7 @@ use clawtank_core::test_pattern::expected_rgb;
 use clawtank_core::tls::TlsIdentity;
 use ironrdp_async::FramedWrite as _;
 use ironrdp_connector::{ClientConnector, ConnectionResult, Credentials};
+use ironrdp_displaycontrol::client::DisplayControlClient;
 use ironrdp_dvc::DrdynvcClient;
 use ironrdp_egfx::client::{GraphicsPipelineClient, GraphicsPipelineHandler};
 use ironrdp_egfx::decode::{DecodedFrame, DecoderResult, H264Decoder};
@@ -171,7 +172,13 @@ pub async fn connect_with(
             Box::new(RecordingHandler(recorder.clone())),
             Some(Box::new(RecordingDecoder(recorder.clone()))),
         );
-        connector.attach_static_channel(DrdynvcClient::new().with_dynamic_channel(gfx));
+        // Display Control too, so tests can request resizes (ActiveStage::encode_resize).
+        let display_control = DisplayControlClient::new(|_| Ok(Vec::new()));
+        connector.attach_static_channel(
+            DrdynvcClient::new()
+                .with_dynamic_channel(gfx)
+                .with_dynamic_channel(display_control),
+        );
     }
 
     let should_upgrade = ironrdp_async::connect_begin(&mut framed, &mut connector).await?;

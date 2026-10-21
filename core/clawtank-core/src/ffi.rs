@@ -60,6 +60,8 @@ pub enum CtEventKind {
     VideoStart = 7,
     /// Graphics pipeline closed: stop capture + encode. Detail: empty.
     VideoStop = 8,
+    /// Client resized: restart capture + encode. Detail: `"WIDTHxHEIGHT@SCALE"` (scale in %).
+    VideoResize = 9,
 }
 
 /// Result of `ct_server_submit_h264`.
@@ -531,7 +533,9 @@ pub unsafe extern "C" fn ct_server_port(server: *const CtServer) -> u16 {
     unsafe { &*server }.handle.local_addr().port()
 }
 
-/// Submits one H.264 access unit (Annex-B byte stream; keyframes must carry SPS/PPS).
+/// Submits one H.264 access unit (Annex-B byte stream; keyframes must carry SPS/PPS),
+/// encoded for a `width`×`height` desktop (the session size from VideoStart/VideoResize;
+/// frames for an outdated size are refused).
 /// The bytes are copied before returning. Thread-safe; never blocks on the network.
 /// Must not be called from inside the event callback.
 ///
@@ -544,13 +548,19 @@ pub unsafe extern "C" fn ct_server_submit_h264(
     data: *const u8,
     len: usize,
     keyframe: bool,
+    width: u16,
+    height: u16,
 ) -> CtSubmitResult {
     // SAFETY: caller guarantees `data` points to `len` readable bytes.
     let (Some(server), Some(data)) = (unsafe { server.as_ref() }, unsafe { bytes(data, len) })
     else {
         return CtSubmitResult::NotReady;
     };
-    match server.handle.video().submit_h264(data, keyframe) {
+    match server
+        .handle
+        .video()
+        .submit_h264(data, keyframe, width, height)
+    {
         SubmitResult::Sent => CtSubmitResult::Sent,
         SubmitResult::NotReady => CtSubmitResult::NotReady,
         SubmitResult::NeedKeyframe => CtSubmitResult::NeedKeyframe,
@@ -633,6 +643,14 @@ fn event_to_c(event: &CoreEvent) -> (CtEventKind, String) {
             (CtEventKind::VideoStart, format!("{width}x{height}"))
         }
         CoreEvent::VideoStop => (CtEventKind::VideoStop, String::new()),
+        CoreEvent::VideoResize {
+            width,
+            height,
+            scale_percent,
+        } => (
+            CtEventKind::VideoResize,
+            format!("{width}x{height}@{scale_percent}"),
+        ),
         CoreEvent::Listening(a) => (CtEventKind::Listening, a.to_string()),
         CoreEvent::Rejected(a) => (CtEventKind::Rejected, a.to_string()),
         CoreEvent::ClientConnected(a) => (CtEventKind::ClientConnected, a.to_string()),
@@ -718,7 +736,7 @@ mod tests {
             assert!(ct_tls_fingerprint_sha256(null(), 0).is_null());
             assert_eq!(ct_server_port(null()), 0);
             assert_eq!(
-                ct_server_submit_h264(null(), null(), 0, true),
+                ct_server_submit_h264(null(), null(), 0, true, 0, 0),
                 CtSubmitResult::NotReady
             );
             assert!(!ct_server_video_can_accept(null()));
