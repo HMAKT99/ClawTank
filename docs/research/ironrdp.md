@@ -38,6 +38,7 @@ We pin with `=x.y.z` and commit `Cargo.lock`.
   - planar, uncompressed, RemoteFX-progressive, ClearCodec
   - `supports_avc420()` / `supports_avc444()`
 - Frame-ack tracking is built in: `set_max_in_flight`, `should_backpressure`, `client_queue_depth`, `acknowledge`. This is what we need for adaptive bitrate and frame dropping.
+- **Bitstream format:** MS-RDPEGFX RFX_AVC420_BITMAP_STREAM requires **Annex-B** with 16-aligned coded dimensions. `ironrdp-egfx` 0.3 client docs claim "AVC length-prefixed". That's wrong per the spec; candidate upstream doc fix. The server side passes bytes through unchanged.
 - **H.264 encoding is not done by IronRDP.** We supply the bitstream, which is our VideoToolbox path, as planned.
 - Fallback codecs without EGFX: bitmap/RemoteFX (`encoder/rfx.rs`), QOI, and optional NSCodec. Phase 1's static test frame can use the bitmap path.
 - Watch: #2121 (EGFX ResetGraphics clears the bitmap cache). It affects CacheToSurface, which we don't plan to use.

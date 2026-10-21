@@ -2,6 +2,9 @@
 //! pattern arrives, and saves what it received as a BMP. For checking the app end to end.
 //!
 //! Usage: `CLAWTANK_PASSWORD=… cargo run --example probe -- <host:port> <user> [WxH] [out.bmp]`
+//!        `CLAWTANK_PASSWORD=… cargo run --example probe -- <host:port> <user> WxH --egfx SECONDS`
+//! The second form joins the Graphics Pipeline and prints H.264 frames/s and kbit/s once per
+//! second (the live ScreenCaptureKit → VideoToolbox → EGFX path), plus totals.
 //! The password comes from the environment so it never appears in the process list.
 
 #[path = "../tests/support/client.rs"]
@@ -27,6 +30,10 @@ async fn main() -> anyhow::Result<()> {
         }
         None => (1280, 800),
     };
+    let egfx_seconds = match (args.get(3).map(String::as_str), args.get(4)) {
+        (Some("--egfx"), Some(secs)) => Some(secs.parse::<u64>()?),
+        _ => None,
+    };
     let out = args
         .get(3)
         .cloned()
@@ -37,6 +44,10 @@ async fn main() -> anyhow::Result<()> {
         .to_socket_addrs()?
         .next()
         .ok_or_else(|| anyhow::anyhow!("cannot resolve {addr}"))?;
+
+    if let Some(seconds) = egfx_seconds {
+        return measure_egfx(addr, user, &password, width, height, seconds).await;
+    }
 
     let started = Instant::now();
     let (result, mut session, cert) =
@@ -63,6 +74,61 @@ async fn main() -> anyhow::Result<()> {
     println!("saved {out}");
     drop(session);
     println!("disconnected");
+    Ok(())
+}
+
+/// Joins EGFX and reports per-second H.264 frame count and bit rate for `seconds`.
+async fn measure_egfx(
+    addr: std::net::SocketAddr,
+    user: &str,
+    password: &str,
+    width: u16,
+    height: u16,
+    seconds: u64,
+) -> anyhow::Result<()> {
+    let recorder = client::EgfxRecorder::default();
+    let (result, mut session, _) =
+        client::connect(addr, user, password, width, height, Some(&recorder)).await?;
+    println!("connected with EGFX; measuring {seconds} s");
+    let start = Instant::now();
+    let (mut last_frames, mut last_bytes, mut next_tick) = (0u64, 0u64, 1u64);
+    let mut first_frame: Option<Duration> = None;
+    client::pump_until(result, &mut session, Duration::from_secs(seconds), || {
+        let (frames, bytes) = (recorder.frame_count(), recorder.byte_count());
+        if first_frame.is_none() && frames > 0 {
+            first_frame = Some(start.elapsed());
+        }
+        if start.elapsed() >= Duration::from_secs(next_tick) {
+            println!(
+                "t={next_tick:>3}s  {:>3} fps  {:>8.1} kbit/s",
+                frames - last_frames,
+                (bytes - last_bytes) as f64 * 8.0 / 1000.0
+            );
+            (last_frames, last_bytes) = (frames, bytes);
+            next_tick += 1;
+        }
+        false
+    })
+    .await?;
+    let (frames, bytes) = (recorder.frame_count(), recorder.byte_count());
+    let secs = start.elapsed().as_secs_f64();
+    println!(
+        "total: {frames} frames, {:.1} fps avg, {:.1} kbit/s avg, first frame after {:?}",
+        frames as f64 / secs,
+        bytes as f64 * 8.0 / 1000.0 / secs,
+        first_frame
+    );
+    if let Some(first) = recorder.bitstreams.lock().unwrap().first() {
+        let nal = first.get(4).map(|b| b & 0x1f);
+        println!(
+            "first bitstream: {} bytes, first NAL type {nal:?} (7 = SPS)",
+            first.len()
+        );
+        if let Ok(path) = std::env::var("CLAWTANK_DUMP_H264") {
+            std::fs::write(&path, first)?;
+            println!("wrote first access unit to {path}");
+        }
+    }
     Ok(())
 }
 

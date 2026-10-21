@@ -4,6 +4,19 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Phase 2 — Live video (2026-10-21)
+- Main display streamed as H.264 over EGFX AVC420. The pipeline is ScreenCaptureKit (IOSurface NV12) → VideoToolbox (hardware, low-latency rtvc, no B-frames) → Annex-B → IronRDP graphics pipeline. Backpressure is checked before encoding, and any refused frame forces an IDR.
+- Only changed frames are captured or encoded. The coded size is 16-aligned, with the region rect cropping to the desktop.
+- Menu shows live fps, bitrate and encode time; there's an optional stats overlay drawn into the video.
+- Screen Recording permission is requested when the first video session starts. The dev signing identity (`make dev-signing`) keeps grants across rebuilds.
+- Tests:
+  - EGFX end-to-end in Rust (byte-exact AVC420 delivery, keyframe rule, ResetGraphics, VideoStop).
+  - Encoder tests (Annex-B, SPS/PPS on IDR, forced IDR).
+  - `make bench`.
+  - `probe --egfx` measures the live app.
+- Measured: 57–58 fps during motion, 7–8% CPU, first frame in about 0.4–0.6 s (see docs/testing.md).
+- ADR-014…016.
+
 ### Phase 1 — First connection (2026-10-21)
 - RDP server in the app: TLS + NLA (CredSSP/NTLM) on port 3389, LAN-only peer filter, and a static colour-bar test frame sized to the client's desktop.
 - TLS identity: self-signed RSA-2048 generated in Rust (rcgen + aws-lc-rs), persisted (see below), and its SHA-256 fingerprint shown in the menu. The NLA password is randomly generated and persisted the same way.
