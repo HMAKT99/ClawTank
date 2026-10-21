@@ -1,0 +1,12 @@
+# Rust
+core/target/
+# Xcode (project is generated from app/project.yml)
+app/ClawTank.xcodeproj/
+app/build/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+# Outputs
+build/
+dist/
+.DS_Store

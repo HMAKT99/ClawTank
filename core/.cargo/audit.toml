@@ -1,0 +1,8 @@
+# cargo-audit configuration. Every ignore needs a justification and an ADR (docs/decisions.md).
+[advisories]
+ignore = [
+    # rsa: Marvin timing side-channel (no fixed release). Reached only via IronRDP → picky/sspi.
+    # TLS private-key operations use rustls + aws-lc-rs, NLA uses NTLM, and Kerberos is unused,
+    # so no RSA PKCS#1 v1.5 decryption with our key runs on rsa. See ADR-008. Re-check on IronRDP bumps.
+    "RUSTSEC-2023-0071",
+]

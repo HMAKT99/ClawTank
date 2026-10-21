@@ -1,0 +1,19 @@
+[package]
+name = "clawtank-core"
+description = "ClawTank RDP protocol core (IronRDP) exposed to the Swift host via a C ABI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+# Exact pins: see docs/research/ironrdp.md. Bump deliberately, never implicitly.
+ironrdp-server = { version = "=0.13.0", default-features = false, features = ["egfx", "helper"] }
+
+[build-dependencies]
+cbindgen = { version = "0.29", default-features = false }

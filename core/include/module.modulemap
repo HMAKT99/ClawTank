@@ -1,0 +1,5 @@
+module ClawTankCore {
+    header "clawtank_core.h"
+    link "clawtank_core"
+    export *
+}

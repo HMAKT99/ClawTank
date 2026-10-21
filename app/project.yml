@@ -1,0 +1,55 @@
+name: ClawTank
+options:
+  bundleIdPrefix: dev.clawtank
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    # Ad-hoc signing by default; Developer ID is applied by scripts/sign.sh when secrets exist.
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: YES
+    # Rust core (built by `make core`) — header + module map and static library.
+    SWIFT_INCLUDE_PATHS: $(SRCROOT)/../core/include
+    LIBRARY_SEARCH_PATHS: $(SRCROOT)/../core/target/release
+targets:
+  ClawTank:
+    type: application
+    platform: macOS
+    sources: [ClawTank]
+    info:
+      path: ClawTank/Info.plist
+      properties:
+        CFBundleDisplayName: ClawTank
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSUIElement: true
+        LSMinimumSystemVersion: "14.0"
+        NSHumanReadableCopyright: "Copyright © 2026 ClawTank contributors. Apache-2.0."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.clawtank.ClawTank
+        OTHER_LDFLAGS: ["-lclawtank_core", "-framework", "Security", "-framework", "SystemConfiguration"]
+  ClawTankTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [ClawTankTests]
+    dependencies:
+      - target: ClawTank
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        BUNDLE_LOADER: $(TEST_HOST)
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/ClawTank.app/Contents/MacOS/ClawTank
+schemes:
+  ClawTank:
+    build:
+      targets:
+        ClawTank: all
+        ClawTankTests: [test]
+    test:
+      targets: [ClawTankTests]
