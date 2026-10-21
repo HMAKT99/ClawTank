@@ -63,6 +63,10 @@ async fn main() -> anyhow::Result<()> {
         let target = (w2.parse()?, h2.parse()?, scale.parse()?);
         return resize_demo(addr, user, &password, (width, height), target, &out_dir).await;
     }
+    if args.get(3).map(String::as_str) == Some("--audio") {
+        let seconds = args.get(4).map(|s| s.parse()).transpose()?.unwrap_or(4);
+        return audio_demo(addr, user, &password, width, height, seconds).await;
+    }
     if args.get(3).map(String::as_str) == Some("--input-demo") {
         let out_dir = args.get(4).cloned().unwrap_or_else(|| ".".to_owned());
         return input_demo(addr, user, &password, width, height, &out_dir).await;
@@ -378,6 +382,83 @@ async fn resize_demo(
         }
     }
     anyhow::bail!("timed out (resize requested: {})", resized_at.is_some())
+}
+
+#[derive(Debug)]
+struct AudioProbe {
+    bytes: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    peak: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    formats: Vec<ironrdp_rdpsnd::pdu::AudioFormat>,
+}
+
+impl ironrdp_rdpsnd::client::RdpsndClientHandler for AudioProbe {
+    fn get_formats(&self) -> &[ironrdp_rdpsnd::pdu::AudioFormat] {
+        &self.formats
+    }
+    fn wave(&mut self, _format_no: usize, _ts: u32, data: std::borrow::Cow<'_, [u8]>) {
+        use std::sync::atomic::Ordering;
+        self.bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
+        let peak = data
+            .chunks_exact(2)
+            .map(|s| u64::from(i16::from_le_bytes([s[0], s[1]]).unsigned_abs()))
+            .max()
+            .unwrap_or(0);
+        self.peak.fetch_max(peak, Ordering::Relaxed);
+    }
+    fn set_volume(&mut self, _v: ironrdp_rdpsnd::pdu::VolumePdu) {}
+    fn set_pitch(&mut self, _p: ironrdp_rdpsnd::pdu::PitchPdu) {}
+    fn close(&mut self) {}
+}
+
+/// Receives system audio for `seconds`, printing kbit/s and peak level each second.
+async fn audio_demo(
+    addr: std::net::SocketAddr,
+    user: &str,
+    password: &str,
+    width: u16,
+    height: u16,
+    seconds: u64,
+) -> anyhow::Result<()> {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    let (bytes, peak) = (Arc::new(AtomicU64::new(0)), Arc::new(AtomicU64::new(0)));
+    let probe = AudioProbe {
+        bytes: Arc::clone(&bytes),
+        peak: Arc::clone(&peak),
+        formats: vec![ironrdp_rdpsnd::pdu::AudioFormat {
+            format: ironrdp_rdpsnd::pdu::WaveFormat::PCM,
+            n_channels: 2,
+            n_samples_per_sec: 48_000,
+            n_avg_bytes_per_sec: 192_000,
+            n_block_align: 4,
+            bits_per_sample: 16,
+            data: None,
+        }],
+    };
+    let mut config = client::client_config(user, password, width, height);
+    config.enable_audio_playback = true;
+    let (result, mut session, _) = client::connect_with_channels(addr, config, None, move |c| {
+        c.attach_static_channel(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(probe)));
+    })
+    .await?;
+    println!("connected with audio; listening {seconds} s");
+    let start = Instant::now();
+    let (mut last, mut tick) = (0u64, 1u64);
+    client::pump_until(result, &mut session, Duration::from_secs(seconds), || {
+        if start.elapsed() >= Duration::from_secs(tick) {
+            let now = bytes.load(Ordering::Relaxed);
+            println!(
+                "t={tick}s  {:.0} kbit/s  peak {}",
+                (now - last) as f64 * 8.0 / 1000.0,
+                peak.swap(0, Ordering::Relaxed)
+            );
+            (last, tick) = (now, tick + 1);
+        }
+        false
+    })
+    .await?;
+    println!("total audio bytes: {}", bytes.load(Ordering::Relaxed));
+    Ok(())
 }
 
 fn fingerprint(cert_der: &[u8]) -> String {

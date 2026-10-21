@@ -110,6 +110,11 @@ final class PCMConverterTests: XCTestCase {
         return buffer!
     }
 
+    func testSilenceDetection() {
+        XCTAssertTrue(PCMConverter.isSilent(Data(count: 1920)))
+        XCTAssertFalse(PCMConverter.isSilent(Data([0, 0, 1, 0])))
+    }
+
     func testNonInterleavedFloatBecomesInterleavedInt16() throws {
         let buffer = try makeFloatBuffer(left: [0, 0.5, -1, 2], right: [1, -0.5, 0, -2])
         let pcm = try XCTUnwrap(PCMConverter.int16Interleaved(buffer, channels: 2))

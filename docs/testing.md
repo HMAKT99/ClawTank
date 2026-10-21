@@ -59,3 +59,11 @@ Live, 2026-10-21:
 - ⚠️ Found: with the Mac locked, clients see only the wallpaper (ADR-018). The menu now says so.
 - [ ] Human, the acceptance test: on a fresh macOS user account, open the DMG, drag to Applications, open (Open Anyway), follow setup (Screen Recording, Accessibility, password), then connect from Windows App. Target: under 2 minutes.
 - [ ] Human: Settings window tabs, the LAN-only warning dialog, Start at login (may need approval in Login Items), Export Diagnostics, Disconnect from the menu, VoiceOver labels.
+
+## Phase 6 — audio and clipboard
+Automated: a Rust end-to-end test with IronRDP's RDPSND and CLIPRDR client channels (48 kHz stereo PCM arrives intact; text both ways), plus Swift tests for text, CF_HTML, DIB (24/32-bit, zero alpha), PCM conversion, silence detection and pasteboard serving.
+Live, 2026-10-21 (`probe … --audio 5` while `afplay Ping.aiff` played):
+- ✅ System audio reached the client: 48 kHz stereo 16-bit, peak 9716 during the ping.
+- ✅ Found and fixed: silence was streamed at 1.5 Mbit/s. Pure digital silence is now skipped, so it measures **0 kbit/s**.
+- [ ] Human (Windows App / mstsc): YouTube audio plays in sync on the client; "Mute this Mac while connected" silences the Mac's speakers but not the client.
+- [ ] Human: copy and paste both ways for plain text, rich text (TextEdit ↔ WordPad/Word), HTML (Safari ↔ Edge), and images (Preview ↔ Paint).

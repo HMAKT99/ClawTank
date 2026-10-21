@@ -48,6 +48,9 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, sampleBuffer.isValid,
               let pcm = PCMConverter.int16Interleaved(sampleBuffer, channels: channels) else { return }
+        // ScreenCaptureKit delivers buffers even when nothing is playing; don't spend 1.5 Mbit/s
+        // streaming pure digital silence (clients handle gaps).
+        guard !PCMConverter.isSilent(pcm) else { return }
         onPCM(pcm)
     }
 

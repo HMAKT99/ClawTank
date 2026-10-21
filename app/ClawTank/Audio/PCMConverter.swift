@@ -5,6 +5,11 @@ import AVFoundation
 import CoreMedia
 
 enum PCMConverter {
+    /// True when every sample is zero (digital silence).
+    static func isSilent(_ pcm: Data) -> Bool {
+        pcm.withUnsafeBytes { raw in raw.allSatisfy { $0 == 0 } }
+    }
+
     /// Interleaved Int16 bytes for `channels` output channels, or nil if the buffer is unusable.
     static func int16Interleaved(_ sampleBuffer: CMSampleBuffer, channels: Int) -> Data? {
         guard let format = CMSampleBufferGetFormatDescription(sampleBuffer),

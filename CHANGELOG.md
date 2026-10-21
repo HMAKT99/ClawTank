@@ -4,6 +4,12 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Phase 6 — Audio and clipboard (2026-10-21)
+- System audio goes to the client over RDPSND: 16-bit PCM stereo at 48 or 44.1 kHz, captured with ScreenCaptureKit, excluding ClawTank's own sound. Silence isn't sent, and there's an optional local mute during sessions.
+- Two-way clipboard over CLIPRDR: plain text (UTF-16, CRLF), Rich Text Format, HTML (CF_HTML) and images (PNG and CF_DIB). The client's formats are fetched in full when it copies, then written to the pasteboard together, with no echo loops.
+- Settings toggles for audio, local mute and clipboard.
+- Tests: Rust end-to-end audio and clipboard in both directions; Swift conversion tests. Live: system audio reaches the client; silence measures 0 kbit/s.
+
 ### Phase 5 — Polished app (2026-10-21)
 - First-run setup window: what ClawTank does, Screen Recording and Accessibility (detected live), choosing a password, and how to connect from Windows, Mac, iPad/iPhone and Linux.
 - Menu shows the connected client (address, since when, display, live stats) with Disconnect, plus Start/Stop sharing, Settings, Connection Log, Setup Guide and Export Diagnostics.
