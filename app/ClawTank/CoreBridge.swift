@@ -68,8 +68,16 @@ final class RdpServer: @unchecked Sendable {
         case clientConnected(String)
         case clientDisconnected(peer: String, error: String?)
         case connectionFailed(peer: String, error: String)
+        case videoStart(width: Int, height: Int)
+        case videoStop
         case stopped
         case error(String)
+    }
+
+    enum SubmitResult: Equatable, Sendable {
+        case sent
+        case notReady
+        case needKeyframe
     }
 
     struct Configuration {
@@ -137,6 +145,36 @@ final class RdpServer: @unchecked Sendable {
 
     deinit { stop() }
 
+    /// Hands one Annex-B access unit to the core (copied before returning). Thread-safe.
+    func submitH264(_ data: Data, keyframe: Bool) -> SubmitResult {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let handle else { return .notReady }
+        let result = data.withUnsafeBytes { bytes in
+            ct_server_submit_h264(handle, bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, keyframe)
+        }
+        switch result {
+        case CT_SUBMIT_RESULT_SENT: return .sent
+        case CT_SUBMIT_RESULT_NEED_KEYFRAME: return .needKeyframe
+        default: return .notReady
+        }
+    }
+
+    /// False while there's no graphics session or the client is behind (skip encoding).
+    var canAcceptVideo: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let handle else { return false }
+        return ct_server_video_can_accept(handle)
+    }
+
+    var videoStats: CtVideoStats {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let handle else { return CtVideoStats() }
+        return ct_server_video_stats(handle)
+    }
+
     fileprivate static func decode(kind: CtEventKind, detail: String) -> Event {
         let parts = detail.split(separator: "\n", maxSplits: 1).map(String.init)
         let peer = parts.first ?? ""
@@ -147,6 +185,10 @@ final class RdpServer: @unchecked Sendable {
         case CT_EVENT_KIND_CLIENT_CONNECTED: return .clientConnected(detail)
         case CT_EVENT_KIND_CLIENT_DISCONNECTED: return .clientDisconnected(peer: peer, error: error)
         case CT_EVENT_KIND_CONNECTION_FAILED: return .connectionFailed(peer: peer, error: error ?? "unknown error")
+        case CT_EVENT_KIND_VIDEO_START:
+            let size = detail.split(separator: "x").compactMap { Int($0) }
+            return size.count == 2 ? .videoStart(width: size[0], height: size[1]) : .error("bad video size \(detail)")
+        case CT_EVENT_KIND_VIDEO_STOP: return .videoStop
         case CT_EVENT_KIND_STOPPED: return .stopped
         default: return .error(detail)
         }

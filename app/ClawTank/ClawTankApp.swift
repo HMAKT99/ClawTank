@@ -1,8 +1,8 @@
 // ClawTank — menu-bar host app.
 //
-// Phase 1: starts the RDP server at launch (TLS + NLA, static test frame) and shows how to
-// connect: address, username, password and certificate fingerprint. Later phases add live
-// capture, input and the services described in docs/architecture.md.
+// Starts the RDP server at launch (TLS + NLA) and shows how to connect: address, username,
+// password and certificate fingerprint. While a client is connected it streams the main
+// display (Phase 2) and shows live video stats. See docs/architecture.md.
 
 import SwiftUI
 
@@ -39,6 +39,10 @@ struct StatusMenu: View {
         if let notice = server.lastNotice {
             Text(notice)
         }
+        if let video = server.videoStatus {
+            Text("Video: \(video)")
+        }
+        Toggle("Show Stats Overlay", isOn: $server.showsStatsOverlay)
         Divider()
         Button("Copy Address (\(server.hostName))") { server.copyAddress() }
         Text("Username: \(server.username)")

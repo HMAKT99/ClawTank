@@ -7,6 +7,14 @@ import Foundation
 import os
 import SystemConfiguration
 
+/// A Bool readable from any thread (the overlay toggle is read on the capture queue).
+final class AtomicFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    func get() -> Bool { lock.withLock { value } }
+    func set(_ newValue: Bool) { lock.withLock { value = newValue } }
+}
+
 @MainActor
 final class ServerController: ObservableObject {
     enum Status: Equatable {
@@ -22,6 +30,11 @@ final class ServerController: ObservableObject {
     /// Most recent noteworthy event (failed login, rejected peer), shown in the menu.
     @Published private(set) var lastNotice: String?
     @Published private(set) var fingerprint = ""
+    /// Live video readout, e.g. "60 fps · 14.2 Mbit/s · enc 3.1 ms"; nil when not streaming.
+    @Published private(set) var videoStatus: String?
+    @Published var showsStatsOverlay = false {
+        didSet { overlayFlag.set(showsStatsOverlay) }
+    }
 
     let username: String
     let hostName: String
@@ -30,6 +43,10 @@ final class ServerController: ObservableObject {
     private let port: UInt16
     private var password = ""
     private var server: RdpServer?
+    private var video: VideoSession?
+    private var statsTimer: Timer?
+    private var lastCounters = VideoSession.Counters()
+    private let overlayFlag = AtomicFlag()
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "server")
 
     init(security: SecurityService = SecurityService(), port: UInt16 = ServerController.defaultPort) {
@@ -62,6 +79,7 @@ final class ServerController: ObservableObject {
     }
 
     func stop() {
+        stopVideo()
         server?.stop()
         server = nil
         status = .stopped
@@ -82,6 +100,17 @@ final class ServerController: ObservableObject {
     private func handle(_ event: RdpServer.Event) {
         guard server != nil else { return }
         switch event {
+        case .videoStart(let width, let height):
+            startVideo(width: width, height: height)
+        case .videoStop:
+            stopVideo()
+        default:
+            handleConnection(event)
+        }
+    }
+
+    private func handleConnection(_ event: RdpServer.Event) {
+        switch event {
         case .listening:
             if case .connected = status { return }
             status = .listening(port: server?.port ?? port)
@@ -89,6 +118,7 @@ final class ServerController: ObservableObject {
             status = .connected(peer: Self.ipOnly(peer))
             lastNotice = nil
         case .clientDisconnected:
+            stopVideo()
             status = .listening(port: server?.port ?? port)
         case .connectionFailed(let peer, let error):
             log.notice("Connection from \(peer, privacy: .public) failed: \(error, privacy: .public)")
@@ -100,11 +130,77 @@ final class ServerController: ObservableObject {
         case .stopped:
             if case .failed = status { return }
             status = .stopped
+        case .videoStart, .videoStop:
+            break
         }
+    }
+
+    // MARK: - Video
+
+    private func startVideo(width: Int, height: Int) {
+        guard let server, video == nil else { return }
+        guard CGPreflightScreenCaptureAccess() else {
+            // Shows the system prompt the first time; afterwards the user must use Settings.
+            CGRequestScreenCaptureAccess()
+            lastNotice = "Grant Screen Recording to ClawTank in System Settings, then reconnect"
+            log.notice("Screen Recording not granted; client sees the test pattern")
+            return
+        }
+        let flag = overlayFlag
+        let session = VideoSession(server: server, width: width, height: height) { flag.get() }
+        video = session
+        lastCounters = .init()
+        Task {
+            do {
+                try await session.start()
+                log.info("Video started \(width)x\(height), hardware=\(session.isHardwareAccelerated)")
+            } catch {
+                log.error("Video start failed: \(error.localizedDescription, privacy: .public)")
+                if video === session { video = nil }
+                lastNotice = "Video failed: \(error.localizedDescription)"
+            }
+        }
+        statsTimer?.invalidate()
+        statsTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.updateVideoStats() }
+        }
+    }
+
+    private func stopVideo() {
+        statsTimer?.invalidate()
+        statsTimer = nil
+        videoStatus = nil
+        guard let session = video else { return }
+        video = nil
+        Task { await session.stop() }
+    }
+
+    private func updateVideoStats() {
+        guard let session = video else { return }
+        let now = session.snapshot()
+        let encoded = now.encodedFrames - lastCounters.encodedFrames
+        let bytes = now.sentBytes - lastCounters.sentBytes
+        let encodeTime = now.encodeSeconds - lastCounters.encodeSeconds
+        let skipped = now.skippedFrames - lastCounters.skippedFrames
+        lastCounters = now
+        let text = Self.formatVideoStats(fps: encoded, bytesPerSecond: bytes,
+                                         encodeMs: encoded > 0 ? encodeTime * 1000 / Double(encoded) : 0,
+                                         skipped: skipped)
+        videoStatus = text
+        session.setOverlayText(text)
+        log.debug("video \(text, privacy: .public)")
+    }
+
+    nonisolated static func formatVideoStats(fps: Int, bytesPerSecond: Int, encodeMs: Double, skipped: Int) -> String {
+        let mbit = Double(bytesPerSecond * 8) / 1_000_000
+        var text = String(format: "%d fps · %.1f Mbit/s · enc %.1f ms", fps, mbit, encodeMs)
+        if skipped > 0 { text += " · \(skipped) skipped" }
+        return text
     }
 
     private func fail(_ message: String) {
         log.error("\(message, privacy: .public)")
+        stopVideo()
         server?.stop()
         server = nil
         status = .failed(message)

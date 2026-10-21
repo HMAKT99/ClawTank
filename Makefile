@@ -35,6 +35,11 @@ test-app: core project
 	xcodebuild -project app/ClawTank.xcodeproj -scheme ClawTank -configuration Debug \
 		-derivedDataPath $(DERIVED) -destination "platform=macOS,arch=$(ARCH)" ARCHS=$(ARCH) -quiet test
 
+bench: core project ## Encoder benchmark (2560x1600 @ 60 fps): latency, bitrate, fps
+	TEST_RUNNER_CLAWTANK_BENCH=1 xcodebuild -project app/ClawTank.xcodeproj -scheme ClawTank -configuration Debug \
+		-derivedDataPath $(DERIVED) -destination "platform=macOS,arch=$(ARCH)" ARCHS=$(ARCH) \
+		-only-testing:ClawTankTests/EncoderBenchmarkTests test 2>&1 | grep -E "BENCH|error|TEST (SUCCEEDED|FAILED)"
+
 lint: ## clippy, rustfmt, swiftlint
 	cd core && cargo clippy --all-targets -- -D warnings
 	cd core && cargo fmt --check

@@ -17,6 +17,8 @@ panic = "abort"
 # Keep debug builds small: full debug info for our crate only, none for dependencies.
 [profile.dev]
 debug = "line-tables-only"
+# Incremental caches grow without bound across edits; full rebuilds of our one crate are fast.
+incremental = false
 
 [profile.dev.package."*"]
 debug = false
