@@ -128,6 +128,20 @@ typedef enum {
    * Requested client data arrived. Detail: format id; fetch with `ct_clipboard_take_data`.
    */
   CT_EVENT_KIND_CLIPBOARD_DATA = 16,
+  /**
+   * The client copied files. Detail: one per line, `"SIZE\tDIR\tPATH"` (DIR is 0/1, PATH
+   * uses `/` and is relative). Line index = file index for contents requests.
+   */
+  CT_EVENT_KIND_CLIPBOARD_REMOTE_FILES = 17,
+  /**
+   * The client wants file contents. Detail: `"STREAM\tINDEX\tsize"` or
+   * `"STREAM\tINDEX\trange\tPOSITION\tLENGTH"`; answer with `ct_clipboard_answer_file`.
+   */
+  CT_EVENT_KIND_CLIPBOARD_FILE_REQUESTED = 18,
+  /**
+   * File contents from the client arrived. Detail: stream id; take with `ct_clipboard_take_file`.
+   */
+  CT_EVENT_KIND_CLIPBOARD_FILE_CONTENTS = 19,
 } CtEventKind;
 
 /**
@@ -265,6 +279,15 @@ typedef struct {
  * it runs on the session's network task.
  */
 typedef void (*CtInputCallback)(void *ctx, const CtInputEvent *event);
+
+/**
+ * One file or folder offered to the client (`path` relative, `/`-separated).
+ */
+typedef struct {
+  const char *path;
+  uint64_t size;
+  bool is_dir;
+} CtFileEntry;
 
 /**
  * Video counters for the current session.
@@ -469,6 +492,50 @@ bool ct_clipboard_request(const CtServer *server, uint32_t format);
  * `server` must be live; `out` and `ok` must be writable.
  */
 uint32_t ct_clipboard_take_data(const CtServer *server, CtBuffer *out, bool *ok);
+
+/**
+ * Offers files/folders (in this order; the index is used in requests) to the client.
+ *
+ * # Safety
+ * `server` must be live; `entries` must point to `count` entries with valid C strings.
+ */
+bool ct_clipboard_announce_files(const CtServer *server, const CtFileEntry *entries, size_t count);
+
+/**
+ * Answers a file-contents request: `kind` 0 = data (`data`/`len`), 1 = size (`size`), 2 = error.
+ *
+ * # Safety
+ * `server` must be live; for data, `data` must point to `len` bytes.
+ */
+bool ct_clipboard_answer_file(const CtServer *server,
+                              uint32_t stream_id,
+                              uint32_t kind,
+                              const uint8_t *data,
+                              size_t len,
+                              uint64_t size);
+
+/**
+ * Requests file `index` of the client's copied files: `size_query` asks for its size
+ * (8-byte little-endian answer), otherwise `length` bytes from `position`. Returns the stream
+ * id (0 on failure); the answer arrives as `ClipboardFileContents`.
+ *
+ * # Safety
+ * `server` must be null or a live pointer from `ct_server_start`.
+ */
+uint32_t ct_clipboard_request_file(const CtServer *server,
+                                   uint32_t index,
+                                   bool size_query,
+                                   uint64_t position,
+                                   uint32_t length);
+
+/**
+ * Takes file contents received for `stream_id`. Returns false if nothing arrived yet; on
+ * success fills `out` (free with `ct_buffer_free`) and `ok` (false if the client errored).
+ *
+ * # Safety
+ * `server` must be live; `out` and `ok` must be writable.
+ */
+bool ct_clipboard_take_file(const CtServer *server, uint32_t stream_id, CtBuffer *out, bool *ok);
 
 /**
  * Hides the client-side cursor.

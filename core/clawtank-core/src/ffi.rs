@@ -15,6 +15,7 @@ use std::sync::{Arc, OnceLock};
 use tracing::Level;
 
 use crate::access::{AccessPolicy, IpNet};
+use crate::clipboard::{FileAnswer, FileEntry, FileQuery};
 use crate::events::CoreEvent;
 use crate::input::InputEvent;
 use crate::server::{self, ServerConfig, ServerHandle};
@@ -78,6 +79,14 @@ pub enum CtEventKind {
     ClipboardDataRequested = 15,
     /// Requested client data arrived. Detail: format id; fetch with `ct_clipboard_take_data`.
     ClipboardData = 16,
+    /// The client copied files. Detail: one per line, `"SIZE\tDIR\tPATH"` (DIR is 0/1, PATH
+    /// uses `/` and is relative). Line index = file index for contents requests.
+    ClipboardRemoteFiles = 17,
+    /// The client wants file contents. Detail: `"STREAM\tINDEX\tsize"` or
+    /// `"STREAM\tINDEX\trange\tPOSITION\tLENGTH"`; answer with `ct_clipboard_answer_file`.
+    ClipboardFileRequested = 18,
+    /// File contents from the client arrived. Detail: stream id; take with `ct_clipboard_take_file`.
+    ClipboardFileContents = 19,
 }
 
 /// Result of `ct_server_submit_h264`.
@@ -778,6 +787,140 @@ pub unsafe extern "C" fn ct_clipboard_take_data(
     format
 }
 
+/// One file or folder offered to the client (`path` relative, `/`-separated).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct CtFileEntry {
+    pub path: *const c_char,
+    pub size: u64,
+    pub is_dir: bool,
+}
+
+/// Offers files/folders (in this order; the index is used in requests) to the client.
+///
+/// # Safety
+/// `server` must be live; `entries` must point to `count` entries with valid C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_clipboard_announce_files(
+    server: *const CtServer,
+    entries: *const CtFileEntry,
+    count: usize,
+) -> bool {
+    // SAFETY: null or live per the contract.
+    let Some(server) = (unsafe { server.as_ref() }) else {
+        return false;
+    };
+    if count > 0 && entries.is_null() {
+        return false;
+    }
+    let mut files = Vec::with_capacity(count);
+    for i in 0..count {
+        // SAFETY: `entries` has `count` elements per the contract.
+        let entry = unsafe { *entries.add(i) };
+        // SAFETY: each path is a valid C string per the contract (null rejected).
+        let Ok(path) = (unsafe { req_str(entry.path) }) else {
+            return false;
+        };
+        files.push(FileEntry {
+            path: path.to_owned(),
+            size: entry.size,
+            is_dir: entry.is_dir,
+        });
+    }
+    server.handle.clipboard().announce_files(&files)
+}
+
+/// Answers a file-contents request: `kind` 0 = data (`data`/`len`), 1 = size (`size`), 2 = error.
+///
+/// # Safety
+/// `server` must be live; for data, `data` must point to `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_clipboard_answer_file(
+    server: *const CtServer,
+    stream_id: u32,
+    kind: u32,
+    data: *const u8,
+    len: usize,
+    size: u64,
+) -> bool {
+    // SAFETY: null or live per the contract.
+    let Some(server) = (unsafe { server.as_ref() }) else {
+        return false;
+    };
+    let answer = match kind {
+        // SAFETY: caller guarantees `data` points to `len` bytes for kind 0.
+        0 => FileAnswer::Data(
+            unsafe { bytes(data, len) }
+                .map(<[u8]>::to_vec)
+                .unwrap_or_default(),
+        ),
+        1 => FileAnswer::Size(size),
+        _ => FileAnswer::Error,
+    };
+    server
+        .handle
+        .clipboard()
+        .answer_file_contents(stream_id, answer)
+}
+
+/// Requests file `index` of the client's copied files: `size_query` asks for its size
+/// (8-byte little-endian answer), otherwise `length` bytes from `position`. Returns the stream
+/// id (0 on failure); the answer arrives as `ClipboardFileContents`.
+///
+/// # Safety
+/// `server` must be null or a live pointer from `ct_server_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_clipboard_request_file(
+    server: *const CtServer,
+    index: u32,
+    size_query: bool,
+    position: u64,
+    length: u32,
+) -> u32 {
+    // SAFETY: null or live per the contract.
+    let Some(server) = (unsafe { server.as_ref() }) else {
+        return 0;
+    };
+    let query = if size_query {
+        FileQuery::Size
+    } else {
+        FileQuery::Range { position, length }
+    };
+    server
+        .handle
+        .clipboard()
+        .request_file_contents(index, query)
+        .unwrap_or(0)
+}
+
+/// Takes file contents received for `stream_id`. Returns false if nothing arrived yet; on
+/// success fills `out` (free with `ct_buffer_free`) and `ok` (false if the client errored).
+///
+/// # Safety
+/// `server` must be live; `out` and `ok` must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_clipboard_take_file(
+    server: *const CtServer,
+    stream_id: u32,
+    out: *mut CtBuffer,
+    ok: *mut bool,
+) -> bool {
+    // SAFETY: null or live per the contract.
+    let (Some(server), false, false) = (unsafe { server.as_ref() }, out.is_null(), ok.is_null())
+    else {
+        return false;
+    };
+    let Some(data) = server.handle.clipboard().take_file_contents(stream_id) else {
+        return false;
+    };
+    // SAFETY: checked non-null and writable per the contract.
+    unsafe {
+        *ok = data.is_some();
+        *out = CtBuffer::from_vec(data.unwrap_or_default());
+    }
+    true
+}
+
 /// Hides the client-side cursor.
 ///
 /// # Safety
@@ -843,6 +986,37 @@ fn event_to_c(event: &CoreEvent) -> (CtEventKind, String) {
             (CtEventKind::ClipboardDataRequested, format.to_string())
         }
         CoreEvent::ClipboardData { format } => (CtEventKind::ClipboardData, format.to_string()),
+        CoreEvent::ClipboardRemoteFiles(files) => (
+            CtEventKind::ClipboardRemoteFiles,
+            files
+                .iter()
+                .map(|f| {
+                    format!(
+                        "{}\t{}\t{}",
+                        f.size,
+                        u8::from(f.is_dir),
+                        f.path.replace(['\n', '\t'], " ")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ),
+        CoreEvent::ClipboardFileRequested {
+            stream_id,
+            index,
+            query,
+        } => (
+            CtEventKind::ClipboardFileRequested,
+            match query {
+                FileQuery::Size => format!("{stream_id}\t{index}\tsize"),
+                FileQuery::Range { position, length } => {
+                    format!("{stream_id}\t{index}\trange\t{position}\t{length}")
+                }
+            },
+        ),
+        CoreEvent::ClipboardFileContents { stream_id } => {
+            (CtEventKind::ClipboardFileContents, stream_id.to_string())
+        }
         CoreEvent::VideoStart { width, height } => {
             (CtEventKind::VideoStart, format!("{width}x{height}"))
         }
@@ -944,6 +1118,10 @@ mod tests {
             assert!(!ct_clipboard_provide(null(), null(), 0, false));
             assert!(!ct_clipboard_request(null(), 13));
             assert_eq!(ct_clipboard_take_data(null(), null_mut(), null_mut()), 0);
+            assert!(!ct_clipboard_announce_files(null(), std::ptr::null(), 0));
+            assert!(!ct_clipboard_answer_file(null(), 1, 2, null(), 0, 0));
+            assert_eq!(ct_clipboard_request_file(null(), 0, true, 0, 0), 0);
+            assert!(!ct_clipboard_take_file(null(), 1, null_mut(), null_mut()));
             assert_eq!(
                 ct_server_set_credentials(null(), null(), null()),
                 CtStatus::InvalidArgument

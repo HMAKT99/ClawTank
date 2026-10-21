@@ -484,6 +484,9 @@ pub enum ServerEvent {
     Egfx(EgfxServerMessage),
     /// Trigger an RTT measurement probe (requires auto-detect enabled).
     AutoDetectRttRequest,
+    /// ClawTank patch (IronRDP #2148, fixed on master with a timer): drive the clipboard
+    /// channel's lock and file-transfer timeouts. The embedder sends this periodically.
+    CliprdrDriveTimeouts,
 }
 
 pub trait ServerEventSender {
@@ -1202,6 +1205,27 @@ impl RdpServer {
                         writer.write_all(&data).await?;
                     }
                 },
+                ServerEvent::CliprdrDriveTimeouts => {
+                    // ClawTank patch (#2148): best-effort sweep; never fail the session over it.
+                    let Some(cliprdr) = self.get_svc_processor::<CliprdrServer>() else {
+                        continue;
+                    };
+                    let msgs: Vec<_> = match cliprdr.drive_timeouts() {
+                        Ok(msgs) => msgs.into(),
+                        Err(error) => {
+                            warn!(%error, "Clipboard timeout cleanup failed");
+                            continue;
+                        }
+                    };
+                    if msgs.is_empty() {
+                        continue;
+                    }
+                    let Some(channel_id) = self.get_channel_id_by_type::<CliprdrServer>() else {
+                        continue;
+                    };
+                    let data = server_encode_svc_messages(msgs, channel_id, user_channel_id)?;
+                    writer.write_all(&data).await?;
+                }
                 ServerEvent::AutoDetectRttRequest => {
                     // Auto-detect requests ride the MCS message channel
                     // ([MS-RDPBCGR] 2.2.14.3). With none negotiated (the client

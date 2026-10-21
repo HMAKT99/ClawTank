@@ -47,6 +47,16 @@ pub enum CoreEvent {
     ClipboardDataRequested { format: u32 },
     /// Data requested from the client arrived; take it from the hub.
     ClipboardData { format: u32 },
+    /// The client copied files/folders (paths sanitized by IronRDP; the host must still check).
+    ClipboardRemoteFiles(Vec<crate::clipboard::FileEntry>),
+    /// The client wants (part of) file `index` of the host's announced list.
+    ClipboardFileRequested {
+        stream_id: u32,
+        index: u32,
+        query: crate::clipboard::FileQuery,
+    },
+    /// File contents requested from the client arrived for `stream_id`.
+    ClipboardFileContents { stream_id: u32 },
     /// The server loop exited; no more events follow.
     Stopped,
     /// The server loop failed.
