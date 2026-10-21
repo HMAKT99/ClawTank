@@ -399,8 +399,10 @@ impl ironrdp_rdpsnd::client::RdpsndClientHandler for AudioProbe {
         use std::sync::atomic::Ordering;
         self.bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
         let peak = data
-            .chunks_exact(2)
-            .map(|s| u64::from(i16::from_le_bytes([s[0], s[1]]).unsigned_abs()))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|s| u64::from(i16::from_le_bytes(*s).unsigned_abs()))
             .max()
             .unwrap_or(0);
         self.peak.fetch_max(peak, Ordering::Relaxed);

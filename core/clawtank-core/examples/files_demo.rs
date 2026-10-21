@@ -181,7 +181,7 @@ async fn main() -> anyhow::Result<()> {
                     );
                 }
             }
-            let requests: Vec<_> = seen.lock().unwrap().requests.drain(..).collect();
+            let requests = std::mem::take(&mut seen.lock().unwrap().requests);
             for request in requests {
                 last_activity = Instant::now();
                 let file = usize::try_from(request.index - 1).unwrap_or(0).min(1); // index 0 is the folder
@@ -235,7 +235,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("Mac offered {} item(s); downloading", files.len());
             }
             // Handle arrived data *before* deciding to send, so the next request goes out at once.
-            let responses: Vec<_> = seen.lock().unwrap().responses.drain(..).collect();
+            let responses = std::mem::take(&mut seen.lock().unwrap().responses);
             for (id, error, data) in responses {
                 if Some(id) == waiting {
                     anyhow::ensure!(!error, "Mac reported an error for {}", files[current].name);
