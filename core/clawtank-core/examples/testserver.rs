@@ -73,6 +73,7 @@ fn main() -> clawtank_core::Result<()> {
                     height,
                     scale_percent,
                 } => format!("video-resize {width}x{height}@{scale_percent}"),
+                other => format!("{other:?}"),
             };
             println!("EVENT {line}");
         }),

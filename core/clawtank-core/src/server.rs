@@ -19,6 +19,8 @@ use tracing::{error, info, warn};
 
 use crate::Result;
 use crate::access::{AccessPolicy, SessionTracker};
+use crate::audio::{AudioHub, SoundFactory};
+use crate::clipboard::{ClipboardFactory, ClipboardHub};
 use crate::display::TestPatternDisplay;
 use crate::events::{CoreEvent, EventSink};
 use crate::gfx::GfxFactory;
@@ -51,9 +53,21 @@ pub struct ServerHandle {
     pointer: Arc<PointerHub>,
     tracker: Arc<SessionTracker>,
     credentials: watch::Sender<Credentials>,
+    audio: Arc<AudioHub>,
+    clipboard: Arc<ClipboardHub>,
 }
 
 impl ServerHandle {
+    /// Where the host submits system audio.
+    pub fn audio(&self) -> &Arc<AudioHub> {
+        &self.audio
+    }
+
+    /// Clipboard relay to the client.
+    pub fn clipboard(&self) -> &Arc<ClipboardHub> {
+        &self.clipboard
+    }
+
     /// Ends the current session, if any; the server keeps listening.
     pub fn disconnect_client(&self) -> bool {
         // Only with a live session: a Quit queued while idle would end the *next* session.
@@ -133,6 +147,9 @@ pub fn start(config: ServerConfig, sink: EventSink, input: InputSink) -> Result<
     let handle_tracker = Arc::clone(&tracker);
     let video = Arc::new(VideoHub::new(sink.clone()));
     let pointer = Arc::new(PointerHub::default());
+    let audio = Arc::new(AudioHub::new(sink.clone()));
+    let clipboard = Arc::new(ClipboardHub::new(sink.clone()));
+    let (thread_audio, thread_clipboard) = (Arc::clone(&audio), Arc::clone(&clipboard));
     let thread_pointer = Arc::clone(&pointer);
     let thread_video = Arc::clone(&video);
     let (shutdown, mut shutdown_rx) = watch::channel(false);
@@ -159,6 +176,10 @@ pub fn start(config: ServerConfig, sink: EventSink, input: InputSink) -> Result<
                 ))
                 .with_honor_client_desktop_size(true)
                 .with_gfx_factory(Some(Box::new(GfxFactory::new(Arc::clone(&thread_video)))))
+                .with_sound_factory(Some(Box::new(SoundFactory::new(Arc::clone(&thread_audio)))))
+                .with_cliprdr_factory(Some(Box::new(ClipboardFactory::new(Arc::clone(
+                    &thread_clipboard,
+                )))))
                 .build();
             server.set_credentials(Some(credentials_rx.borrow_and_update().clone()));
             let _ = quit_tx.send(server.event_sender().clone());
@@ -200,6 +221,8 @@ pub fn start(config: ServerConfig, sink: EventSink, input: InputSink) -> Result<
                     }
                     let result = server.run_connection(stream).await;
                     thread_video.session_ended();
+                    thread_audio.stop();
+                    thread_clipboard.session_ended();
                     tracker.finished(peer, result.err().map(|e| format!("{e:#}")));
                     if *shutdown_rx.borrow() {
                         break;
@@ -224,5 +247,7 @@ pub fn start(config: ServerConfig, sink: EventSink, input: InputSink) -> Result<
         pointer,
         tracker: handle_tracker,
         credentials: credentials_tx,
+        audio,
+        clipboard,
     })
 }

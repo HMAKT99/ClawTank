@@ -35,6 +35,18 @@ pub enum CoreEvent {
     },
     /// The graphics pipeline closed: stop capturing/encoding.
     VideoStop,
+    /// Audio negotiated: start capturing system audio as 16-bit PCM in this format.
+    AudioStart { rate: u32, channels: u16 },
+    /// Audio channel closed: stop capturing audio.
+    AudioStop,
+    /// Clipboard channel up (or the client asked for our formats): announce the host clipboard.
+    ClipboardReady,
+    /// The client copied: these formats are available (fetch with a request).
+    ClipboardRemoteFormats(Vec<crate::clipboard::Format>),
+    /// The client wants the host clipboard in `format`; answer with provide.
+    ClipboardDataRequested { format: u32 },
+    /// Data requested from the client arrived; take it from the hub.
+    ClipboardData { format: u32 },
     /// The server loop exited; no more events follow.
     Stopped,
     /// The server loop failed.

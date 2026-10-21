@@ -162,6 +162,16 @@ pub async fn connect_with(
     config: ironrdp_connector::Config,
     egfx: Option<&EgfxRecorder>,
 ) -> anyhow::Result<(ConnectionResult, Session, Vec<u8>)> {
+    connect_with_channels(addr, config, egfx, |_| {}).await
+}
+
+/// Like [`connect_with`]; `attach` can add more static channels (audio, clipboard, …).
+pub async fn connect_with_channels(
+    addr: SocketAddr,
+    config: ironrdp_connector::Config,
+    egfx: Option<&EgfxRecorder>,
+    attach: impl FnOnce(&mut ClientConnector),
+) -> anyhow::Result<(ConnectionResult, Session, Vec<u8>)> {
     let server_name = "clawtank-server";
     let tcp = TcpStream::connect(addr).await?;
     let client_addr = tcp.local_addr()?;
@@ -181,6 +191,7 @@ pub async fn connect_with(
         );
     }
 
+    attach(&mut connector);
     let should_upgrade = ironrdp_async::connect_begin(&mut framed, &mut connector).await?;
     let tcp = framed.into_inner_no_leftover();
 

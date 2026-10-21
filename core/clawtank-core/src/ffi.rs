@@ -66,6 +66,18 @@ pub enum CtEventKind {
     VideoResize = 9,
     /// Repeated failed logins locked out an IP. Detail: `"ip\nminutes"`.
     LockedOut = 10,
+    /// Audio negotiated. Detail: `"RATExCHANNELS"`; submit 16-bit PCM with `ct_server_submit_audio`.
+    AudioStart = 11,
+    /// Audio channel closed. Detail: empty.
+    AudioStop = 12,
+    /// Clipboard ready (or the client asked): announce the host clipboard. Detail: empty.
+    ClipboardReady = 13,
+    /// The client copied. Detail: one format per line, `"ID"` or `"ID\tNAME"`.
+    ClipboardRemoteFormats = 14,
+    /// The client wants the host clipboard. Detail: format id; answer with `ct_clipboard_provide`.
+    ClipboardDataRequested = 15,
+    /// Requested client data arrived. Detail: format id; fetch with `ct_clipboard_take_data`.
+    ClipboardData = 16,
 }
 
 /// Result of `ct_server_submit_h264`.
@@ -647,6 +659,125 @@ pub unsafe extern "C" fn ct_server_set_credentials(
     CtStatus::Ok
 }
 
+/// Submits interleaved 16-bit little-endian PCM in the format from `AudioStart`. Returns
+/// false if audio isn't active. Copies the bytes.
+///
+/// # Safety
+/// `server` must be a live pointer from `ct_server_start`; `pcm` must point to `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_server_submit_audio(
+    server: *const CtServer,
+    pcm: *const u8,
+    len: usize,
+) -> bool {
+    // SAFETY: caller guarantees `pcm` points to `len` readable bytes.
+    let (Some(server), Some(pcm)) = (unsafe { server.as_ref() }, unsafe { bytes(pcm, len) }) else {
+        return false;
+    };
+    server.handle.audio().submit_pcm(pcm)
+}
+
+/// Offers the host clipboard's formats to the client. `ids[i]` with optional `names[i]`
+/// (null for standard formats). Returns false if the clipboard channel isn't ready.
+///
+/// # Safety
+/// `server` must be live; `ids` and `names` must point to `count` elements; non-null names
+/// must be valid C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_clipboard_announce(
+    server: *const CtServer,
+    ids: *const u32,
+    names: *const *const c_char,
+    count: usize,
+) -> bool {
+    // SAFETY: null or live per the contract.
+    let Some(server) = (unsafe { server.as_ref() }) else {
+        return false;
+    };
+    if count > 0 && (ids.is_null() || names.is_null()) {
+        return false;
+    }
+    let mut formats = Vec::with_capacity(count);
+    for i in 0..count {
+        // SAFETY: both arrays have `count` elements per the contract.
+        let (id, name) = unsafe { (*ids.add(i), *names.add(i)) };
+        // SAFETY: each name is null or a valid C string per the contract.
+        let name = match unsafe { opt_str(name) } {
+            Ok(n) => n.map(str::to_owned),
+            Err(_) => return false,
+        };
+        formats.push(crate::clipboard::Format { id, name });
+    }
+    server.handle.clipboard().announce(&formats)
+}
+
+/// Answers the client's latest clipboard request with `len` bytes (or `ok = false` for
+/// "can't provide").
+///
+/// # Safety
+/// `server` must be live; `data` must point to `len` bytes when `ok` and `len > 0`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_clipboard_provide(
+    server: *const CtServer,
+    data: *const u8,
+    len: usize,
+    ok: bool,
+) -> bool {
+    // SAFETY: null or live per the contract.
+    let Some(server) = (unsafe { server.as_ref() }) else {
+        return false;
+    };
+    let payload = if ok {
+        // SAFETY: caller guarantees `data` points to `len` readable bytes.
+        Some(
+            unsafe { bytes(data, len) }
+                .map(<[u8]>::to_vec)
+                .unwrap_or_default(),
+        )
+    } else {
+        None
+    };
+    server.handle.clipboard().provide(payload)
+}
+
+/// Asks the client for its clipboard in `format`; `ClipboardData` follows.
+///
+/// # Safety
+/// `server` must be null or a live pointer from `ct_server_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_clipboard_request(server: *const CtServer, format: u32) -> bool {
+    // SAFETY: null or live per the contract.
+    unsafe { server.as_ref() }.is_some_and(|s| s.handle.clipboard().request(format))
+}
+
+/// Takes the oldest clipboard data received from the client. Returns its format id (0 if
+/// none) and fills `out` (free with `ct_buffer_free`); `ok` is false if the client reported an
+/// error for that format.
+///
+/// # Safety
+/// `server` must be live; `out` and `ok` must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_clipboard_take_data(
+    server: *const CtServer,
+    out: *mut CtBuffer,
+    ok: *mut bool,
+) -> u32 {
+    // SAFETY: null or live per the contract.
+    let (Some(server), false, false) = (unsafe { server.as_ref() }, out.is_null(), ok.is_null())
+    else {
+        return 0;
+    };
+    let Some((format, data)) = server.handle.clipboard().take_data() else {
+        return 0;
+    };
+    // SAFETY: checked non-null and writable per the contract.
+    unsafe {
+        *ok = data.is_some();
+        *out = CtBuffer::from_vec(data.unwrap_or_default());
+    }
+    format
+}
+
 /// Hides the client-side cursor.
 ///
 /// # Safety
@@ -692,6 +823,26 @@ pub unsafe extern "C" fn ct_server_video_stats(server: *const CtServer) -> CtVid
 
 fn event_to_c(event: &CoreEvent) -> (CtEventKind, String) {
     match event {
+        CoreEvent::AudioStart { rate, channels } => {
+            (CtEventKind::AudioStart, format!("{rate}x{channels}"))
+        }
+        CoreEvent::AudioStop => (CtEventKind::AudioStop, String::new()),
+        CoreEvent::ClipboardReady => (CtEventKind::ClipboardReady, String::new()),
+        CoreEvent::ClipboardRemoteFormats(formats) => (
+            CtEventKind::ClipboardRemoteFormats,
+            formats
+                .iter()
+                .map(|f| match &f.name {
+                    Some(name) => format!("{}\t{}", f.id, name.replace(['\n', '\t'], " ")),
+                    None => f.id.to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ),
+        CoreEvent::ClipboardDataRequested { format } => {
+            (CtEventKind::ClipboardDataRequested, format.to_string())
+        }
+        CoreEvent::ClipboardData { format } => (CtEventKind::ClipboardData, format.to_string()),
         CoreEvent::VideoStart { width, height } => {
             (CtEventKind::VideoStart, format!("{width}x{height}"))
         }
@@ -788,6 +939,11 @@ mod tests {
             assert!(!ct_server_set_pointer(null(), null(), 0, 1, 1, 0, 0));
             ct_server_hide_pointer(null());
             assert!(!ct_server_disconnect_client(null()));
+            assert!(!ct_server_submit_audio(null(), null(), 0));
+            assert!(!ct_clipboard_announce(null(), null(), null(), 0));
+            assert!(!ct_clipboard_provide(null(), null(), 0, false));
+            assert!(!ct_clipboard_request(null(), 13));
+            assert_eq!(ct_clipboard_take_data(null(), null_mut(), null_mut()), 0);
             assert_eq!(
                 ct_server_set_credentials(null(), null(), null()),
                 CtStatus::InvalidArgument

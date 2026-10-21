@@ -9,6 +9,8 @@
 //! host over the Graphics Pipeline (EGFX AVC420). Non-EGFX clients see a static test frame.
 
 pub mod access;
+pub mod audio;
+pub mod clipboard;
 pub mod display;
 pub mod events;
 pub mod ffi;

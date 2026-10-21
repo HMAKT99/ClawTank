@@ -104,6 +104,30 @@ typedef enum {
    * Repeated failed logins locked out an IP. Detail: `"ip\nminutes"`.
    */
   CT_EVENT_KIND_LOCKED_OUT = 10,
+  /**
+   * Audio negotiated. Detail: `"RATExCHANNELS"`; submit 16-bit PCM with `ct_server_submit_audio`.
+   */
+  CT_EVENT_KIND_AUDIO_START = 11,
+  /**
+   * Audio channel closed. Detail: empty.
+   */
+  CT_EVENT_KIND_AUDIO_STOP = 12,
+  /**
+   * Clipboard ready (or the client asked): announce the host clipboard. Detail: empty.
+   */
+  CT_EVENT_KIND_CLIPBOARD_READY = 13,
+  /**
+   * The client copied. Detail: one format per line, `"ID"` or `"ID\tNAME"`.
+   */
+  CT_EVENT_KIND_CLIPBOARD_REMOTE_FORMATS = 14,
+  /**
+   * The client wants the host clipboard. Detail: format id; answer with `ct_clipboard_provide`.
+   */
+  CT_EVENT_KIND_CLIPBOARD_DATA_REQUESTED = 15,
+  /**
+   * Requested client data arrived. Detail: format id; fetch with `ct_clipboard_take_data`.
+   */
+  CT_EVENT_KIND_CLIPBOARD_DATA = 16,
 } CtEventKind;
 
 /**
@@ -396,6 +420,55 @@ bool ct_server_disconnect_client(const CtServer *server);
 CtStatus ct_server_set_credentials(const CtServer *server,
                                    const char *username,
                                    const char *password);
+
+/**
+ * Submits interleaved 16-bit little-endian PCM in the format from `AudioStart`. Returns
+ * false if audio isn't active. Copies the bytes.
+ *
+ * # Safety
+ * `server` must be a live pointer from `ct_server_start`; `pcm` must point to `len` bytes.
+ */
+bool ct_server_submit_audio(const CtServer *server, const uint8_t *pcm, size_t len);
+
+/**
+ * Offers the host clipboard's formats to the client. `ids[i]` with optional `names[i]`
+ * (null for standard formats). Returns false if the clipboard channel isn't ready.
+ *
+ * # Safety
+ * `server` must be live; `ids` and `names` must point to `count` elements; non-null names
+ * must be valid C strings.
+ */
+bool ct_clipboard_announce(const CtServer *server,
+                           const uint32_t *ids,
+                           const char *const *names,
+                           size_t count);
+
+/**
+ * Answers the client's latest clipboard request with `len` bytes (or `ok = false` for
+ * "can't provide").
+ *
+ * # Safety
+ * `server` must be live; `data` must point to `len` bytes when `ok` and `len > 0`.
+ */
+bool ct_clipboard_provide(const CtServer *server, const uint8_t *data, size_t len, bool ok);
+
+/**
+ * Asks the client for its clipboard in `format`; `ClipboardData` follows.
+ *
+ * # Safety
+ * `server` must be null or a live pointer from `ct_server_start`.
+ */
+bool ct_clipboard_request(const CtServer *server, uint32_t format);
+
+/**
+ * Takes the oldest clipboard data received from the client. Returns its format id (0 if
+ * none) and fills `out` (free with `ct_buffer_free`); `ok` is false if the client reported an
+ * error for that format.
+ *
+ * # Safety
+ * `server` must be live; `out` and `ok` must be writable.
+ */
+uint32_t ct_clipboard_take_data(const CtServer *server, CtBuffer *out, bool *ok);
 
 /**
  * Hides the client-side cursor.
