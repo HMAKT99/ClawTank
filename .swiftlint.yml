@@ -8,4 +8,4 @@ line_length:
   error: 160
 identifier_name:
   # Coordinates and loop indices read better short.
-  excluded: [x, y, dx, dy, i, id]
+  excluded: [x, y, dx, dy, i, id, ip]

@@ -184,6 +184,11 @@ final class SecurityService: Sendable {
         return password
     }
 
+    /// Replaces the stored RDP password (the caller validates it with PasswordPolicy).
+    func setPassword(_ password: String) throws {
+        try store.write(Data(password.utf8), for: Account.password)
+    }
+
     /// Uniformly random password from `passwordAlphabet` (rejection sampling, no modulo bias).
     static func generatePassword(length: Int = passwordLength) throws -> String {
         let alphabet = passwordAlphabet

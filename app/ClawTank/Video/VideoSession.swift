@@ -34,10 +34,15 @@ final class VideoSession: @unchecked Sendable {
 
     let target: DisplayTarget
 
-    init(server: RdpServer, width: Int, height: Int, target: DisplayTarget,
-         overlayEnabled: @escaping @Sendable () -> Bool) {
+    let frameRate: Int
+    let bitRateFactor: Double
+
+    init(server: RdpServer, width: Int, height: Int, target: DisplayTarget, frameRate: Int = 60,
+         bitRateFactor: Double = 1, overlayEnabled: @escaping @Sendable () -> Bool) {
         self.server = server
         self.target = target
+        self.frameRate = frameRate
+        self.bitRateFactor = bitRateFactor
         self.contentWidth = width
         self.contentHeight = height
         self.overlayEnabled = overlayEnabled
@@ -58,9 +63,10 @@ final class VideoSession: @unchecked Sendable {
     }
 
     func start() async throws {
+        let baseRate = H264Encoder.Settings.defaultBitRate(width: codedWidth, height: codedHeight, frameRate: frameRate)
         let settings = H264Encoder.Settings(
-            width: codedWidth, height: codedHeight,
-            averageBitRate: H264Encoder.Settings.defaultBitRate(width: codedWidth, height: codedHeight, frameRate: 60),
+            width: codedWidth, height: codedHeight, frameRate: frameRate,
+            averageBitRate: max(1_000_000, Int(Double(baseRate) * bitRateFactor)),
             lowLatencyRateControl: true)  // ADR-016: tighter p95 encode latency
         let encoder = try H264Encoder(settings: settings) { [weak self] frame in
             self?.deliver(frame)
@@ -73,7 +79,7 @@ final class VideoSession: @unchecked Sendable {
             onStop: { [weak self] _ in self?.log.notice("Capture ended") })
         try await capture.start(.init(
             contentWidth: contentWidth, contentHeight: contentHeight,
-            codedWidth: codedWidth, codedHeight: codedHeight,
+            codedWidth: codedWidth, codedHeight: codedHeight, frameRate: frameRate,
             displaySize: target.bounds.size), displayID: target.displayID)
         self.capture = capture
     }

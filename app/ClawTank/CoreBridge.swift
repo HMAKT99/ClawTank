@@ -64,7 +64,9 @@ final class CoreBridge: Sendable {
 final class RdpServer: @unchecked Sendable {
     enum Event: Equatable, Sendable {
         case listening(String)
-        case rejected(String)
+        /// Refused before the handshake; `reason` is "lan-only", "allowlist" or "locked-out".
+        case rejected(peer: String, reason: String)
+        case lockedOut(ip: String, minutes: Int)
         case clientConnected(String)
         case clientDisconnected(peer: String, error: String?)
         case connectionFailed(peer: String, error: String)
@@ -88,6 +90,8 @@ final class RdpServer: @unchecked Sendable {
         var password: String
         var identity: TLSIdentity
         var lanOnly = true
+        /// Comma-separated IPs/CIDRs; empty = no allowlist.
+        var allowlist = ""
     }
 
     enum StartError: Error, Equatable {
@@ -105,7 +109,8 @@ final class RdpServer: @unchecked Sendable {
          onInput: @escaping @Sendable (ClientInput) -> Void = { _ in }) throws {
         let sink = Unmanaged.passRetained(RdpEventSink(onEvent, onInput))
         var status = CT_STATUS_OK
-        let handle: OpaquePointer? = config.bindIP.withCString { bindIP in
+        let handle: OpaquePointer? = config.allowlist.withCString { allowlist in
+        config.bindIP.withCString { bindIP in
             config.username.withCString { user in
                 config.password.withCString { pass in
                     config.identity.certificateDER.withUnsafeBytes { cert in
@@ -114,13 +119,14 @@ final class RdpServer: @unchecked Sendable {
                                 bind_ip: bindIP, port: config.port, username: user, password: pass,
                                 cert_der: cert.bindMemory(to: UInt8.self).baseAddress, cert_der_len: cert.count,
                                 key_der: key.bindMemory(to: UInt8.self).baseAddress, key_der_len: key.count,
-                                lan_only: config.lanOnly)
+                                lan_only: config.lanOnly, allowlist: allowlist)
                             return ct_server_start(&native, rdpServerEventCallback, rdpServerInputCallback,
                                                    sink.toOpaque(), &status)
                         }
                     }
                 }
             }
+        }
         }
         guard let handle else {
             sink.release()
@@ -164,6 +170,26 @@ final class RdpServer: @unchecked Sendable {
         }
     }
 
+    /// Ends the connected client's session; the server keeps listening.
+    @discardableResult
+    func disconnectClient() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let handle else { return false }
+        return ct_server_disconnect_client(handle)
+    }
+
+    /// Changes the NLA login for future connections (no restart).
+    func setCredentials(username: String, password: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let handle else { return false }
+        let status = username.withCString { user in
+            password.withCString { pass in ct_server_set_credentials(handle, user, pass) }
+        }
+        return status == CT_STATUS_OK
+    }
+
     /// Publishes the cursor shape (BGRA, straight alpha, bottom-up rows).
     @discardableResult
     func setPointer(_ shape: CursorPublisher.Shape) -> Bool {
@@ -191,24 +217,34 @@ final class RdpServer: @unchecked Sendable {
         return ct_server_video_stats(handle)
     }
 
-    fileprivate static func decode(kind: CtEventKind, detail: String) -> Event {
-        let parts = detail.split(separator: "\n", maxSplits: 1).map(String.init)
-        let peer = parts.first ?? ""
-        let error = parts.count > 1 ? parts[1] : nil
+    private static func decodeVideo(kind: CtEventKind, detail: String) -> Event? {
         switch kind {
-        case CT_EVENT_KIND_LISTENING: return .listening(detail)
-        case CT_EVENT_KIND_REJECTED: return .rejected(detail)
-        case CT_EVENT_KIND_CLIENT_CONNECTED: return .clientConnected(detail)
-        case CT_EVENT_KIND_CLIENT_DISCONNECTED: return .clientDisconnected(peer: peer, error: error)
-        case CT_EVENT_KIND_CONNECTION_FAILED: return .connectionFailed(peer: peer, error: error ?? "unknown error")
         case CT_EVENT_KIND_VIDEO_START:
             let size = detail.split(separator: "x").compactMap { Int($0) }
             return size.count == 2 ? .videoStart(width: size[0], height: size[1]) : .error("bad video size \(detail)")
-        case CT_EVENT_KIND_VIDEO_STOP: return .videoStop
+        case CT_EVENT_KIND_VIDEO_STOP:
+            return .videoStop
         case CT_EVENT_KIND_VIDEO_RESIZE:
             let parts = detail.split(whereSeparator: { $0 == "x" || $0 == "@" }).compactMap { Int($0) }
             return parts.count == 3 ? .videoResize(width: parts[0], height: parts[1], scalePercent: parts[2])
                 : .error("bad resize \(detail)")
+        default:
+            return nil
+        }
+    }
+
+    fileprivate static func decode(kind: CtEventKind, detail: String) -> Event {
+        let parts = detail.split(separator: "\n", maxSplits: 1).map(String.init)
+        let peer = parts.first ?? ""
+        let error = parts.count > 1 ? parts[1] : nil
+        if let video = decodeVideo(kind: kind, detail: detail) { return video }
+        switch kind {
+        case CT_EVENT_KIND_LISTENING: return .listening(detail)
+        case CT_EVENT_KIND_REJECTED: return .rejected(peer: peer, reason: error ?? "")
+        case CT_EVENT_KIND_LOCKED_OUT: return .lockedOut(ip: peer, minutes: Int(error ?? "") ?? 0)
+        case CT_EVENT_KIND_CLIENT_CONNECTED: return .clientConnected(detail)
+        case CT_EVENT_KIND_CLIENT_DISCONNECTED: return .clientDisconnected(peer: peer, error: error)
+        case CT_EVENT_KIND_CONNECTION_FAILED: return .connectionFailed(peer: peer, error: error ?? "unknown error")
         case CT_EVENT_KIND_STOPPED: return .stopped
         default: return .error(detail)
         }
