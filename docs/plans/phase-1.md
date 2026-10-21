@@ -44,7 +44,7 @@ Run the IronRDP server inside ClawTank.app with TLS + NLA. A stock client (Windo
 - **FreeRDP (independent implementation)**: `tests/freerdp-smoke.sh` runs `xfreerdp3 /auth-only` for NLA, then a timed full connect under `xvfb-run`. The script asserts on the test server's log ("bitmap sent", "client disconnected"). It runs in an Ubuntu CI job, which works because the core is pure Rust.
 
 ## Risks
-- Ad-hoc-signed rebuilds change the code signature, so Keychain may prompt "ClawTank wants to access…" after each rebuild. Clicking **Always Allow** clears it until the next rebuild. Acceptable for development; signed releases won't do this.
+- Ad-hoc-signed rebuilds change the code signature, and the Keychain then prompts for the login password on each rebuild. Resolved by ADR-013: ad-hoc builds use an owner-only file store.
 - The macOS firewall may ask to allow incoming connections. That's a human checkpoint.
 - Stock-client quirks in IronRDP's bitmap path (cf. upstream #2122 for Jump Desktop). Mitigation: test with Windows App and FreeRDP.
 

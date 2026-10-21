@@ -1,6 +1,8 @@
 // Secrets for the RDP listener: the TLS identity (certificate + private key) and the NLA
-// password. Stored as Keychain generic-password items so they survive restarts and the
-// certificate fingerprint stays stable. Storage sits behind `SecretStore` so tests use a fake.
+// password, persisted so they survive restarts and the certificate fingerprint stays stable.
+// Developer ID builds use the Keychain. Ad-hoc dev builds use an owner-only file store,
+// because the login keychain ties access to each ad-hoc build's exact hash and would prompt
+// for the keychain password after every rebuild (ADR-013). Tests inject a fake `SecretStore`.
 //
 // Phase 1 generates a random password and shows it in the menu; Phase 5 onboarding lets the
 // user choose one (ADR-003).
@@ -59,6 +61,70 @@ struct KeychainStore: SecretStore {
     }
 }
 
+/// Owner-only files (directory 0700, files 0600) in Application Support. Used by ad-hoc
+/// (unsigned) builds only; see ADR-013.
+struct FileSecretStore: SecretStore {
+    let directory: URL
+
+    static var defaultDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ClawTank/secrets", isDirectory: true)
+    }
+
+    private func url(for account: String) -> URL {
+        directory.appendingPathComponent("\(account).secret")
+    }
+
+    func read(_ account: String) throws -> Data? {
+        let file = url(for: account)
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        return try Data(contentsOf: file)
+    }
+
+    func write(_ data: Data, for account: String) throws {
+        let files = FileManager.default
+        try files.createDirectory(at: directory, withIntermediateDirectories: true,
+                               attributes: [.posixPermissions: 0o700])
+        try files.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        let file = url(for: account)
+        // Create empty with 0600 first so the secret is never briefly world-readable.
+        if !files.fileExists(atPath: file.path) {
+            files.createFile(atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        }
+        let handle = try FileHandle(forWritingTo: file)
+        defer { try? handle.close() }
+        try handle.truncate(atOffset: 0)
+        try handle.write(contentsOf: data)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var mutable = file
+        try? mutable.setResourceValues(values)
+    }
+}
+
+enum SecretStores {
+    /// Keychain for Developer ID–signed builds, owner-only files for ad-hoc builds.
+    static func `default`() -> SecretStore {
+        isSignedWithTeamIdentifier()
+            ? KeychainStore(service: "dev.clawtank.ClawTank")
+            : FileSecretStore(directory: FileSecretStore.defaultDirectory)
+    }
+
+    /// True when this process's code signature carries a team identifier (Developer ID or
+    /// Apple Development). Ad-hoc signatures have none.
+    static func isSignedWithTeamIdentifier() -> Bool {
+        var code: SecCode?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return false }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return false }
+        var info: CFDictionary?
+        let flags = SecCSFlags(rawValue: kSecCSSigningInformation)
+        guard SecCodeCopySigningInformation(staticCode, flags, &info) == errSecSuccess,
+              let info = info as? [String: Any] else { return false }
+        return info[kSecCodeInfoTeamIdentifier as String] != nil
+    }
+}
+
 struct TLSIdentity: Equatable, Sendable {
     let certificateDER: Data
     let privateKeyDER: Data
@@ -84,7 +150,7 @@ final class SecurityService: Sendable {
     private let store: SecretStore
     private let core: CoreBridge
 
-    init(store: SecretStore = KeychainStore(service: "dev.clawtank.ClawTank"), core: CoreBridge = .shared) {
+    init(store: SecretStore = SecretStores.default(), core: CoreBridge = .shared) {
         self.store = store
         self.core = core
     }

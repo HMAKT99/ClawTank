@@ -49,8 +49,8 @@ Format: context → decision → consequences. Newest last. Status is *Accepted*
 
 ## ADR-010 — TLS identity: self-signed RSA-2048, generated in Rust, stored in the Keychain
 **Context.** Stock clients must accept our certificate, and users verify it by fingerprint. IronRDP's `helper` module loads PEM files and enables `KeyLogFile`.
-**Decision.** `rcgen` (aws-lc-rs backend) generates RSA-2048 with roughly a 3-year validity, CN = `<host>.local`, EKU serverAuth. We build our own rustls `ServerConfig` with an explicit aws-lc-rs provider and no key logging. Swift stores the certificate DER and PKCS#8 key DER as Keychain generic-password items (`dev.clawtank.ClawTank`, `AfterFirstUnlockThisDeviceOnly`, so a headless Mac works after reboot and auto-login), and the fingerprint stays stable across launches.
-**Consequences.** Ad-hoc-signed dev rebuilds change the code signature, so the Keychain may ask again to allow access (choose **Always Allow**). Signed releases won't. Certificate rotation UI comes in Phase 5.
+**Decision.** `rcgen` (aws-lc-rs backend) generates RSA-2048 with roughly a 3-year validity, CN = `<host>.local`, EKU serverAuth. We build our own rustls `ServerConfig` with an explicit aws-lc-rs provider and no key logging. Swift persists the certificate DER and PKCS#8 key DER: Keychain generic-password items (`dev.clawtank.ClawTank`, `AfterFirstUnlockThisDeviceOnly`, so a headless Mac works after reboot and auto-login) for signed builds, and an owner-only file for ad-hoc builds (ADR-013). The fingerprint stays stable across launches.
+**Consequences.** Certificate rotation UI comes in Phase 5.
 
 ## ADR-011 — LAN-only means a peer-address filter, not interface binding
 **Context.** IronRDP binds a single address. Binding each LAN interface separately is fragile (DHCP, Wi-Fi/Ethernet changes).
@@ -61,3 +61,8 @@ Format: context → decision → consequences. Newest last. Status is *Accepted*
 **Context.** Onboarding (Phase 5) is where the user chooses the password; Phase 1 needs something secure now.
 **Decision.** Generate a 20-character password (unambiguous alphabet, about 115 bits) with `SecRandomCopyBytes` and rejection sampling, store it in the Keychain, and expose it through **Copy Password** in the menu. The username is the macOS short name.
 **Consequences.** Phase 5 replaces generation with user choice and adds a strength check.
+
+## ADR-013 — Ad-hoc dev builds store secrets in an owner-only file, not the Keychain
+**Context.** The login keychain records which app may read an item using that app's code signature. For ad-hoc signatures it pins the exact build hash, and an explicit designated requirement (tried and verified 2026-10-21) does not change that. So every rebuild triggers a password prompt for the login keychain, which blocks development and won't work for users who don't know that password. The Data Protection keychain needs an application-identifier entitlement, which ad-hoc builds can't have.
+**Decision.** `SecretStores.default()` checks the running signature. With a team identifier (Developer ID / Apple Development) it uses `KeychainStore`. Otherwise it uses `FileSecretStore` at `~/Library/Application Support/ClawTank/secrets/` (directory 0700, files 0600, excluded from backups). Files are created 0600 *before* the secret is written.
+**Consequences.** In unsigned builds, any process running as the same user can read the TLS key and RDP password. That's similar to the exposure an ad-hoc Keychain item would give, and it's documented for users of unsigned builds. Signed releases keep Keychain protection. A future "migrate secrets" step is needed if a user switches from an unsigned to a signed build (Phase 10).

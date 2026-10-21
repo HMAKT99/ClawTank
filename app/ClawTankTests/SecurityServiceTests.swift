@@ -37,4 +37,26 @@ final class SecurityServiceTests: XCTestCase {
         XCTAssertEqual(Set(passwords).count, passwords.count)
         XCTAssertTrue(passwords.allSatisfy { $0.allSatisfy(alphabet.contains) })
     }
+
+    func testFileStoreRoundTripsWithOwnerOnlyPermissions() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = FileSecretStore(directory: dir)
+        XCTAssertNil(try store.read("missing"))
+        try store.write(Data("first-value".utf8), for: "item")
+        try store.write(Data("second".utf8), for: "item")
+        XCTAssertEqual(try store.read("item"), Data("second".utf8))
+
+        func permissions(_ url: URL) throws -> Int? {
+            try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int
+        }
+        let dirPerms = try permissions(dir)
+        let filePerms = try permissions(dir.appendingPathComponent("item.secret"))
+        XCTAssertEqual(dirPerms, 0o700)
+        XCTAssertEqual(filePerms, 0o600)
+    }
+
+    func testAdHocTestHostIsNotTeamSigned() {
+        XCTAssertFalse(SecretStores.isSignedWithTeamIdentifier())
+    }
 }
