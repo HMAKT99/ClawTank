@@ -93,3 +93,10 @@ Live, 2026-10-21, loopback, `files_demo` (examples/files_demo.rs) acting as the 
   - the router with a fake host: token required, throttling, Origin and Host refusal, every action reported for the audit log, human-wins 409 for 3 s with screenshots still allowed, error codes
   - app lookup by name and bundle id, with paths refused
 - Rust (`clawtank-mcp`): MCP initialize and version negotiation, tools/list, screenshot → image content with screenshot-pixel → point conversion, API errors → tool errors, loopback-only URLs.
+- Live acceptance (2026-10-21, MacBook, 1470×956 pt @2x), with a script acting as the MCP client:
+  - `clawtank-mcp` handled initialize (2025-06-18), tools/list (12 tools) and list_displays.
+  - `screenshot` returned a 1470×956 PNG of the real desktop, with the "Agent … is in control" badge visible.
+  - `open_app TextEdit` worked, and `get_state` then reported TextEdit frontmost with its window title.
+  - The audit log has one `agentAction` line per step.
+  - A bad token got 401 and was logged as `agentRefused`; an `Origin` header got 403.
+  - The API listened on 127.0.0.1:3390 only, and refused connections once turned off. ✅
