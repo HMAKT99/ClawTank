@@ -8,6 +8,9 @@
 //!        `CLAWTANK_PASSWORD=… cargo run --example probe -- <host:port> <user> WxH --input-demo OUTDIR`
 //! The third form drives the Mac like a user: clicks the screen centre, types "clawtank!" and
 //! "é", scrolls down 3 notches, middle-clicks, and saves every cursor shape received to OUTDIR.
+//!        `… probe <host:port> <user> WxH --resize-demo W2xH2@SCALE OUTDIR`
+//! The fourth form streams at WxH, saves the first keyframe, asks for W2xH2 over Display
+//! Control, times how long until a keyframe at the new size arrives, and saves that one too.
 //! The password comes from the environment so it never appears in the process list.
 
 #[path = "../tests/support/client.rs"]
@@ -48,6 +51,18 @@ async fn main() -> anyhow::Result<()> {
         .next()
         .ok_or_else(|| anyhow::anyhow!("cannot resolve {addr}"))?;
 
+    if args.get(3).map(String::as_str) == Some("--resize-demo") {
+        let spec = args
+            .get(4)
+            .ok_or_else(|| anyhow::anyhow!("--resize-demo needs W2xH2@SCALE"))?;
+        let (size, scale) = spec.split_once('@').unwrap_or((spec, "100"));
+        let (w2, h2) = size
+            .split_once('x')
+            .ok_or_else(|| anyhow::anyhow!("bad size {size}"))?;
+        let out_dir = args.get(5).cloned().unwrap_or_else(|| ".".to_owned());
+        let target = (w2.parse()?, h2.parse()?, scale.parse()?);
+        return resize_demo(addr, user, &password, (width, height), target, &out_dir).await;
+    }
     if args.get(3).map(String::as_str) == Some("--input-demo") {
         let out_dir = args.get(4).cloned().unwrap_or_else(|| ".".to_owned());
         return input_demo(addr, user, &password, width, height, &out_dir).await;
@@ -294,6 +309,75 @@ async fn input_demo(
     drop(session);
     println!("disconnected");
     Ok(())
+}
+
+async fn resize_demo(
+    addr: std::net::SocketAddr,
+    user: &str,
+    password: &str,
+    (width, height): (u16, u16),
+    (w2, h2, scale): (u32, u32, u32),
+    out_dir: &str,
+) -> anyhow::Result<()> {
+    use ironrdp_async::FramedWrite as _;
+    let recorder = client::EgfxRecorder::default();
+    let (result, mut session, _) =
+        client::connect(addr, user, password, width, height, Some(&recorder)).await?;
+    let mut stage = client::active_stage(result);
+    let mut image = ironrdp_session::image::DecodedImage::new(
+        ironrdp_graphics::image_processing::PixelFormat::RgbA32,
+        width,
+        height,
+    );
+    let started = Instant::now();
+    let mut resized_at: Option<Instant> = None;
+    let mut first_reset = None;
+    while started.elapsed() < Duration::from_secs(20) {
+        let streams = recorder.bitstreams.lock().unwrap().len();
+        let reset = *recorder.reset_size.lock().unwrap();
+        match resized_at {
+            None if streams > 0 => {
+                std::fs::write(
+                    format!("{out_dir}/before.h264"),
+                    &recorder.bitstreams.lock().unwrap()[0],
+                )?;
+                println!(
+                    "first frame at {width}x{height} after {:?} (ResetGraphics {reset:?})",
+                    started.elapsed()
+                );
+                first_reset = reset;
+                if let Some(bytes) = stage.encode_resize(w2, h2, Some(scale), None) {
+                    session.write_all(&bytes?).await?;
+                    recorder.bitstreams.lock().unwrap().clear();
+                    resized_at = Some(Instant::now());
+                    println!("requested {w2}x{h2} @ {scale}%");
+                }
+            }
+            Some(t) if streams > 0 && reset == Some((w2, h2)) && reset != first_reset => {
+                std::fs::write(
+                    format!("{out_dir}/after.h264"),
+                    &recorder.bitstreams.lock().unwrap()[0],
+                )?;
+                println!(
+                    "first frame at {w2}x{h2} {:?} after the request (ResetGraphics {reset:?})",
+                    t.elapsed()
+                );
+                return Ok(());
+            }
+            _ => {}
+        }
+        let Ok(read) = tokio::time::timeout(Duration::from_millis(50), session.read_pdu()).await
+        else {
+            continue;
+        };
+        let (action, payload) = read?;
+        for out in stage.process(&mut image, action, &payload)? {
+            if let ironrdp_session::ActiveStageOutput::ResponseFrame(f) = out {
+                session.write_all(&f).await?;
+            }
+        }
+    }
+    anyhow::bail!("timed out (resize requested: {})", resized_at.is_some())
 }
 
 fn fingerprint(cert_der: &[u8]) -> String {

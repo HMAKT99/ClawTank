@@ -70,10 +70,10 @@ final class DisplayService {
         if useVirtual, provider.isAvailable {
             let hiDPI = Self.wantsHiDPI(width: width, height: height, scalePercent: scalePercent)
             if let existing = virtualDisplay {
-                if existing.resize(widthPixels: width, heightPixels: height, hiDPI: hiDPI) {
+                if await existing.resize(widthPixels: width, heightPixels: height, hiDPI: hiDPI) {
                     return target(for: existing)
                 }
-                release()
+                release()  // couldn't resize in place: recreate below
             }
             do {
                 let display = try await provider.create(widthPixels: width, heightPixels: height, hiDPI: hiDPI)

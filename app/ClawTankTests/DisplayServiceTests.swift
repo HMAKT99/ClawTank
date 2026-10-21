@@ -16,11 +16,9 @@ final class FakeVirtualDisplay: VirtualDisplay {
     var invalidated = false
     var acceptResize = true
     init(id: CGDirectDisplayID) { displayID = id }
-    nonisolated func resize(widthPixels: Int, heightPixels: Int, hiDPI: Bool) -> Bool {
-        MainActor.assumeIsolated {
-            sizes.append(Request(width: widthPixels, height: heightPixels, hiDPI: hiDPI))
-            return acceptResize
-        }
+    func resize(widthPixels: Int, heightPixels: Int, hiDPI: Bool) async -> Bool {
+        sizes.append(Request(width: widthPixels, height: heightPixels, hiDPI: hiDPI))
+        return acceptResize
     }
     nonisolated func invalidate() { MainActor.assumeIsolated { invalidated = true } }
 }
@@ -79,6 +77,19 @@ final class DisplayServiceTests: XCTestCase {
         XCTAssertTrue(display.invalidated)
     }
 
+    func testRecreatesWhenResizeInPlaceFails() async throws {
+        let provider = FakeProvider()
+        let service = makeService(physical: [7], provider: provider)
+        _ = await service.prepare(width: 3024, height: 1964, scalePercent: 200, mode: .virtual)
+        let first = try XCTUnwrap(provider.created.first)
+        first.acceptResize = false  // e.g. Retina → 1x
+        let target = await service.prepare(width: 1512, height: 982, scalePercent: 100, mode: .virtual)
+        XCTAssertTrue(first.invalidated)
+        XCTAssertEqual(provider.created.count, 2)
+        XCTAssertEqual(target?.displayID, provider.created.last?.displayID)
+        XCTAssertEqual(provider.requests.last, Request(width: 1512, height: 982, hiDPI: false))
+    }
+
     func testFallsBackToPhysicalWhenVirtualFails() async {
         let provider = FakeProvider()
         provider.fail = true
@@ -111,32 +122,43 @@ final class DisplayServiceTests: XCTestCase {
     }
 }
 
-/// Creates a REAL virtual display (it briefly appears as an extra screen). Opt in with
+/// Creates REAL virtual displays (they briefly appear as extra screens). Opt in with
 /// CLAWTANK_VD_TESTS=1 (`TEST_RUNNER_CLAWTANK_VD_TESTS=1 make test-app`).
 @MainActor
 final class RealVirtualDisplayTests: XCTestCase {
-    func testCreateResizeRemove() async throws {
+    private func waitGone(_ id: CGDirectDisplayID) async throws {
+        for _ in 0..<60 where CGVirtualDisplayProvider.onlineDisplays().contains(id) {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
+
+    func testCreateResizeRemoveAndCreateAgain() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["CLAWTANK_VD_TESTS"] == "1", "set CLAWTANK_VD_TESTS=1")
         let provider = CGVirtualDisplayProvider()
         try XCTSkipUnless(provider.isAvailable, "CGVirtualDisplay not available on this macOS")
+
         let display = try await provider.create(widthPixels: 2560, heightPixels: 1600, hiDPI: true)
         let id = display.displayID
         XCTAssertTrue(CGVirtualDisplayProvider.onlineDisplays().contains(id))
         XCTAssertFalse(DisplayService.onlinePhysicalDisplays().contains(id), "ours are not 'physical'")
-        let mode = try XCTUnwrap(CGDisplayCopyDisplayMode(id))
-        XCTAssertEqual(mode.pixelWidth, 2560)
-        XCTAssertEqual(mode.width, 1280)
+        XCTAssertEqual(CGDisplayBounds(id).size, CGSize(width: 1280, height: 800), "2560×1600 px at 2× = 1280×800 pt")
 
-        XCTAssertTrue(display.resize(widthPixels: 1920, heightPixels: 1200, hiDPI: false))
-        for _ in 0..<40 where CGDisplayCopyDisplayMode(id)?.pixelWidth != 1920 {
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
-        XCTAssertEqual(CGDisplayCopyDisplayMode(id)?.pixelWidth, 1920)
+        let retinaResize = await display.resize(widthPixels: 2880, heightPixels: 1800, hiDPI: true)
+        XCTAssertTrue(retinaResize)
+        XCTAssertEqual(CGDisplayBounds(id).size, CGSize(width: 1440, height: 900))
+        let toOneX = await display.resize(widthPixels: 1920, heightPixels: 1200, hiDPI: false)
+        XCTAssertFalse(toOneX, "Retina → 1x must be recreated, not resized")
 
         display.invalidate()
-        for _ in 0..<60 where CGVirtualDisplayProvider.onlineDisplays().contains(id) {
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
+        try await waitGone(id)
         XCTAssertFalse(CGVirtualDisplayProvider.onlineDisplays().contains(id), "removed")
+
+        // A second display in the same process (the next session) must work too.
+        let second = try await provider.create(widthPixels: 1512, heightPixels: 982, hiDPI: false)
+        XCTAssertEqual(CGDisplayBounds(second.displayID).size, CGSize(width: 1512, height: 982))
+        let shrink = await second.resize(widthPixels: 1280, heightPixels: 800, hiDPI: false)
+        XCTAssertTrue(shrink)
+        second.invalidate()
+        try await waitGone(second.displayID)
     }
 }

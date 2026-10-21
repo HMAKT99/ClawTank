@@ -8,10 +8,11 @@ import CoreGraphics
 import Foundation
 import os
 
-protocol VirtualDisplay: AnyObject {
+protocol VirtualDisplay: AnyObject, Sendable {
     var displayID: CGDirectDisplayID { get }
-    /// Reconfigures in place (live resize). Returns false if the system rejected the mode.
-    func resize(widthPixels: Int, heightPixels: Int, hiDPI: Bool) -> Bool
+    /// Reconfigures in place (live resize). Returns false if that isn't possible (e.g. Retina →
+    /// 1x, which the window server applies wrongly) or didn't take effect; then recreate.
+    func resize(widthPixels: Int, heightPixels: Int, hiDPI: Bool) async -> Bool
     /// Removes the display. Idempotent.
     func invalidate()
 }
@@ -39,9 +40,12 @@ struct CGVirtualDisplayProvider: VirtualDisplayProvider {
     func create(widthPixels: Int, heightPixels: Int, hiDPI: Bool) async throws -> VirtualDisplay {
         guard isAvailable else { throw VirtualDisplayError.unavailable }
         let handle = try CGVirtualDisplayHandle(widthPixels: widthPixels, heightPixels: heightPixels, hiDPI: hiDPI)
-        // The window server announces the display asynchronously.
-        for _ in 0..<40 {
-            if Self.onlineDisplays().contains(handle.displayID) { return handle }
+        // The window server brings the display up asynchronously: wait until it is online *and*
+        // has the requested size, so capture never starts against a half-configured display.
+        for _ in 0..<60 {
+            if Self.onlineDisplays().contains(handle.displayID), handle.hasSize(widthPixels, heightPixels) {
+                return handle
+            }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         handle.invalidate()
@@ -56,13 +60,16 @@ struct CGVirtualDisplayProvider: VirtualDisplayProvider {
     }
 }
 
-final class CGVirtualDisplayHandle: VirtualDisplay {
+/// Only created and used from the main actor (DisplayService); `@unchecked` because the
+/// private ObjC object isn't annotated.
+final class CGVirtualDisplayHandle: VirtualDisplay, @unchecked Sendable {
     /// Identifies our displays (e.g. to exclude them when looking for physical ones).
     static let vendorID: UInt32 = 0x434C   // "CL"
     static let productID: UInt32 = 0x5441  // "TA"
 
     private var display: CGVirtualDisplay?
     let displayID: CGDirectDisplayID
+    private var hiDPI: Bool
     private let log = Logger(subsystem: "dev.clawtank.ClawTank", category: "display")
 
     /// Largest framebuffer we allow (Display Control caps the client at 3840×2400).
@@ -88,18 +95,36 @@ final class CGVirtualDisplayHandle: VirtualDisplay {
         guard let (display, id) = created else { throw VirtualDisplayError.applyFailed }
         self.display = display
         self.displayID = id
+        self.hiDPI = hiDPI
         log.info("Virtual display \(id) \(widthPixels)x\(heightPixels) hiDPI=\(hiDPI)")
     }
 
     deinit { invalidate() }
 
-    func resize(widthPixels: Int, heightPixels: Int, hiDPI: Bool) -> Bool {
-        guard let display else { return false }
+    func resize(widthPixels: Int, heightPixels: Int, hiDPI: Bool) async -> Bool {
+        // Measured on macOS 15.6: Retina→Retina, 1x→1x and 1x→Retina apply in place, but
+        // Retina→1x keeps Retina semantics (2560×1600@2x → "1920×1200" became 960×600).
+        guard let display, !(self.hiDPI && !hiDPI) else { return false }
         let applied = autoreleasepool {
             display.apply(Self.settings(widthPixels: widthPixels, heightPixels: heightPixels, hiDPI: hiDPI))
         }
-        log.info("Virtual display \(self.displayID) → \(widthPixels)x\(heightPixels) hiDPI=\(hiDPI) applied=\(applied)")
-        return applied
+        guard applied else { return false }
+        self.hiDPI = hiDPI
+        for _ in 0..<20 {
+            if hasSize(widthPixels, heightPixels) { break }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let done = hasSize(widthPixels, heightPixels)
+        log.info("Virtual display \(self.displayID) → \(widthPixels)x\(heightPixels) hiDPI=\(hiDPI) done=\(done)")
+        return done
+    }
+
+    /// Whether the display currently has this framebuffer size. Uses the bounds (points):
+    /// CGDisplayCopyDisplayMode is unreliable for virtual displays (often returns nil).
+    func hasSize(_ widthPixels: Int, _ heightPixels: Int) -> Bool {
+        let divisor = hiDPI ? 2 : 1
+        let size = CGDisplayBounds(displayID).size
+        return Int(size.width) == widthPixels / divisor && Int(size.height) == heightPixels / divisor
     }
 
     func invalidate() {
