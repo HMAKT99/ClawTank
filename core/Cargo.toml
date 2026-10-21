@@ -13,3 +13,10 @@ rust-version = "1.88"
 lto = "thin"
 codegen-units = 1
 panic = "abort"
+
+# Keep debug builds small: full debug info for our crate only, none for dependencies.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

@@ -14,7 +14,9 @@ Date: 2026-10-21. Source inspected: crates.io API and `Devolutions/IronRDP` mast
 | ironrdp-displaycontrol | 0.8.0 | 2026-07-10 |
 | ironrdp-rdpdr | 0.7.0 | 2026-07-10 |
 
-Master's `Cargo.toml` versions match crates.io, so the published crates are current. We pin with `=x.y.z` and commit `Cargo.lock`.
+We pin with `=x.y.z` and commit `Cargo.lock`.
+
+> **Correction (Phase 1, 2026-10-21):** master's `Cargo.toml` shows the same version numbers as crates.io, but master carries many **unreleased** changes. The published `ironrdp-server 0.13.0` does **not** have: `ConnectionSource`/`serve`, `ConnectionHandler::on_connection_info`, `DisplayContext` (suppress-output), server-side RDPDR (`with_rdpdr_factory`), RDPEI or USB. It **does** have: `run`/`run_connection`, `ConnectionHandler::{on_accept, on_disconnected}`, `CredentialValidator`, `with_honor_client_desktop_size`, EGFX (`GfxServerFactory`), CLIPRDR, RDPSND, DisplayControl, and the bitmap/RemoteFX encoders. Sections below describe master unless marked. See ADR-009.
 
 ## Findings per requirement
 
@@ -58,7 +60,7 @@ Master's `Cargo.toml` versions match crates.io, so the published crates are curr
 - `with_sound_factory(SoundServerFactory)` → `RdpsndServerHandler` (we provide `get_formats()` and the PCM stream). Usable as-is.
 
 ### File transfer (RDPDR)
-- **Present and server-side:** `with_rdpdr_factory(RdpdrServerFactory)` → `RdpdrServerBackend` (`on_device_announce`, …), with an EFS PDU module (`pdu/efs.rs`). Drive redirection looks feasible. Maturity is unknown until we exercise it in Phase 7.
+- **Master only (unreleased in 0.13.0):** `with_rdpdr_factory(RdpdrServerFactory)` → `RdpdrServerBackend` (`on_device_announce`, …), with an EFS PDU module (`pdu/efs.rs`). Drive redirection looks feasible. Maturity is unknown until we exercise it in Phase 7.
 
 ### Other
 - USB redirection (opt-in feature), echo, auto-detect (RTT measurement; useful for adaptive quality), multitransport/UDP.

@@ -1,5 +1,6 @@
 import XCTest
 import ClawTankCore
+import Foundation
 @testable import ClawTank
 
 final class CoreBridgeTests: XCTestCase {

@@ -1,0 +1,4 @@
+# Build Rust and bundled C code (aws-lc-sys) for the app's minimum macOS (ADR-005).
+# Without this, cc uses the SDK's version and the objects won't load on older macOS.
+[env]
+MACOSX_DEPLOYMENT_TARGET = "14.0"

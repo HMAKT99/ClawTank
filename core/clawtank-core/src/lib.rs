@@ -1,13 +1,25 @@
 //! ClawTank protocol core.
 //!
-//! This crate will host the IronRDP server (TLS, NLA, EGFX, virtual channels) and expose it to
-//! the Swift host app through a narrow C ABI (see [`ffi`]). The Swift side owns everything
-//! macOS-specific (capture, encode, input injection); this side owns the RDP protocol.
+//! Hosts the IronRDP server (TLS, NLA, graphics, virtual channels) and exposes it to the
+//! Swift host app through a narrow C ABI (see [`ffi`]). The Swift side owns everything
+//! macOS-specific (capture, encode, input injection, Keychain); this side owns the RDP
+//! protocol.
 //!
-//! Phase 0 only proves the build and link path: the FFI exports a version string and an
-//! idempotent init, and `ironrdp-server` is compiled in so the pinned versions are exercised.
+//! Phase 1: the server authenticates stock clients with NLA and serves a static test frame.
 
+pub mod access;
+pub mod display;
+pub mod events;
 pub mod ffi;
+pub mod input;
+pub mod logging;
+pub mod server;
+pub mod test_pattern;
+pub mod tls;
+
+/// Error type for the Rust-side API. FFI functions map errors to [`ffi::CtStatus`].
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 /// Crate version, as a NUL-terminated string so it can cross the FFI boundary without copying.
 pub const VERSION_CSTR: &std::ffi::CStr = match std::ffi::CStr::from_bytes_with_nul(
@@ -15,9 +27,4 @@ pub const VERSION_CSTR: &std::ffi::CStr = match std::ffi::CStr::from_bytes_with_
 ) {
     Ok(s) => s,
     Err(_) => panic!("version string must not contain interior NUL"),
-};
-
-/// Compile-time proof that the pinned IronRDP server API is available.
-const _: fn() = || {
-    let _ = ironrdp_server::RdpServer::builder;
 };

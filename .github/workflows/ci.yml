@@ -34,6 +34,22 @@ jobs:
           name: ClawTank-dmg
           path: dist/*
 
+  freerdp-interop:
+    # The core is portable Rust, so the independent-client check runs on Linux with FreeRDP 3.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: Install FreeRDP and Xvfb
+        run: sudo apt-get update && sudo apt-get install -y freerdp3-x11 xvfb
+      - name: Build test server
+        run: cd core && cargo build --example testserver
+      - name: FreeRDP smoke test
+        run: tests/freerdp-smoke.sh core/target/debug/examples/testserver
+
   audit:
     runs-on: ubuntu-latest
     steps:

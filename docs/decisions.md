@@ -41,3 +41,23 @@ Format: context → decision → consequences. Newest last. Status is *Accepted*
 **Context.** `cargo audit` flags `rsa 0.10.0-rc.18`, pulled in by IronRDP's `picky`/`sspi`. No fixed version exists. The attack needs an RSA PKCS#1 v1.5 *decryption* oracle using the server's private key.
 **Decision.** Ignore it in `core/.cargo/audit.toml`, after verifying our path: TLS private-key operations go through rustls with aws-lc-rs; NLA uses NTLM (HMAC/RC4, no RSA); Kerberos (whose sspi decrypts are symmetric anyway) is not enabled. We also raised the workspace MSRV to Rust 1.88 to take `time ≥ 0.3.47` (RUSTSEC-2026-0009).
 **Consequences.** We re-check this whenever IronRDP is bumped and remove the ignore once `rsa` ships a constant-time release. If we ever enable Kerberos or RSA key transport, this ADR must be revisited.
+
+## ADR-009 — Stay on released `ironrdp-server 0.13.0`; own the accept loop
+**Context.** Phase 0 research read IronRDP *master*, which carries unreleased APIs under the same version number (`ConnectionSource`/`serve`, `on_connection_info`, suppress-output context, server-side RDPDR). The published 0.13.0 has `run()` and `run_connection(stream)` only.
+**Decision.** Depend on the released crate, not a git revision. `server.rs` runs its own accept loop (bind → LAN check → `run_connection`), which also gives synchronous bind errors and port-0 support. IronRDP only calls `RdpServerDisplay::updates()` after authentication and capability exchange, so we use that call as the "session started" signal. We enable `with_honor_client_desktop_size(true)` and only clamp sizes no valid client sends.
+**Consequences.** We re-check for these APIs when IronRDP publishes a new release, and Phase 7 file transfer depends on RDPDR server support shipping. The accept loop is about 40 lines we maintain ourselves.
+
+## ADR-010 — TLS identity: self-signed RSA-2048, generated in Rust, stored in the Keychain
+**Context.** Stock clients must accept our certificate, and users verify it by fingerprint. IronRDP's `helper` module loads PEM files and enables `KeyLogFile`.
+**Decision.** `rcgen` (aws-lc-rs backend) generates RSA-2048 with roughly a 3-year validity, CN = `<host>.local`, EKU serverAuth. We build our own rustls `ServerConfig` with an explicit aws-lc-rs provider and no key logging. Swift stores the certificate DER and PKCS#8 key DER as Keychain generic-password items (`dev.clawtank.ClawTank`, `AfterFirstUnlockThisDeviceOnly`, so a headless Mac works after reboot and auto-login), and the fingerprint stays stable across launches.
+**Consequences.** Ad-hoc-signed dev rebuilds change the code signature, so the Keychain may ask again to allow access (choose **Always Allow**). Signed releases won't. Certificate rotation UI comes in Phase 5.
+
+## ADR-011 — LAN-only means a peer-address filter, not interface binding
+**Context.** IronRDP binds a single address. Binding each LAN interface separately is fragile (DHCP, Wi-Fi/Ethernet changes).
+**Decision.** Bind `0.0.0.0:3389`, and refuse any peer outside loopback, RFC 1918, 169.254/16, 100.64/10 (CGNAT, used by Tailscale), fc00::/7 and fe80::/10 before TLS starts. Rejections are reported to the UI.
+**Consequences.** Port-forwarded internet traffic is refused even if a router exposes the port. Disabling the filter will need an explicit, warned setting (Phase 5/8).
+
+## ADR-012 — Phase 1 password: random, shown in the menu
+**Context.** Onboarding (Phase 5) is where the user chooses the password; Phase 1 needs something secure now.
+**Decision.** Generate a 20-character password (unambiguous alphabet, about 115 bits) with `SecRandomCopyBytes` and rejection sampling, store it in the Keychain, and expose it through **Copy Password** in the menu. The username is the macOS short name.
+**Consequences.** Phase 5 replaces generation with user choice and adds a strength check.

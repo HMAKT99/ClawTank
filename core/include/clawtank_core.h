@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /**
  * Result code for FFI calls.
@@ -17,10 +18,130 @@ typedef enum {
    */
   CT_STATUS_OK = 0,
   /**
-   * `ct_core_init` was already called; the call had no effect.
+   * `ct_core_init` (or `ct_set_log_callback`) was already called; the call had no effect.
    */
   CT_STATUS_ALREADY_INITIALIZED = 1,
+  /**
+   * A required pointer was null, a string was not UTF-8, or a value was out of range.
+   */
+  CT_STATUS_INVALID_ARGUMENT = 2,
+  /**
+   * Generating or loading the TLS identity failed.
+   */
+  CT_STATUS_TLS_ERROR = 3,
+  /**
+   * The listen address could not be bound (port in use, permission, bad address).
+   */
+  CT_STATUS_BIND_FAILED = 4,
+  /**
+   * Any other failure; details are in the log.
+   */
+  CT_STATUS_INTERNAL_ERROR = 5,
 } CtStatus;
+
+/**
+ * Log severity for [`CtLogCallback`].
+ */
+typedef enum {
+  CT_LOG_LEVEL_ERROR = 0,
+  CT_LOG_LEVEL_WARN = 1,
+  CT_LOG_LEVEL_INFO = 2,
+  CT_LOG_LEVEL_DEBUG = 3,
+  CT_LOG_LEVEL_TRACE = 4,
+} CtLogLevel;
+
+/**
+ * Kind of a server event delivered to [`CtEventCallback`].
+ */
+typedef enum {
+  /**
+   * Listener bound. Detail: `"ip:port"`.
+   */
+  CT_EVENT_KIND_LISTENING = 0,
+  /**
+   * Peer refused by the LAN-only policy. Detail: `"ip:port"`.
+   */
+  CT_EVENT_KIND_REJECTED = 1,
+  /**
+   * Client authenticated; session started. Detail: `"ip:port"`.
+   */
+  CT_EVENT_KIND_CLIENT_CONNECTED = 2,
+  /**
+   * Session ended. Detail: `"ip:port"` or `"ip:port\nerror"`.
+   */
+  CT_EVENT_KIND_CLIENT_DISCONNECTED = 3,
+  /**
+   * Connection failed before the session started (e.g. bad password). Detail: `"ip:port\nerror"`.
+   */
+  CT_EVENT_KIND_CONNECTION_FAILED = 4,
+  /**
+   * Server loop exited. Detail: empty.
+   */
+  CT_EVENT_KIND_STOPPED = 5,
+  /**
+   * Server loop failed. Detail: error message.
+   */
+  CT_EVENT_KIND_ERROR = 6,
+} CtEventKind;
+
+/**
+ * Opaque running server.
+ */
+typedef struct CtServer CtServer;
+
+/**
+ * Receives log lines. `message` is a NUL-terminated UTF-8 string valid only for the call.
+ */
+typedef void (*CtLogCallback)(CtLogLevel level, const char *message);
+
+/**
+ * Bytes allocated by the core. Free with [`ct_buffer_free`].
+ */
+typedef struct {
+  uint8_t *data;
+  size_t len;
+} CtBuffer;
+
+/**
+ * Server configuration. All pointers are borrowed for the duration of `ct_server_start`.
+ */
+typedef struct {
+  /**
+   * Listen IP address, e.g. `"0.0.0.0"` or `"127.0.0.1"`. NUL-terminated UTF-8.
+   */
+  const char *bind_ip;
+  /**
+   * Listen port; 0 picks a free port (see `ct_server_port`).
+   */
+  uint16_t port;
+  /**
+   * NLA username. NUL-terminated UTF-8.
+   */
+  const char *username;
+  /**
+   * NLA password. NUL-terminated UTF-8.
+   */
+  const char *password;
+  /**
+   * DER certificate from `ct_generate_tls_identity`.
+   */
+  const uint8_t *cert_der;
+  size_t cert_der_len;
+  /**
+   * PKCS#8 DER private key from `ct_generate_tls_identity`.
+   */
+  const uint8_t *key_der;
+  size_t key_der_len;
+  /**
+   * Refuse peers outside local/private address ranges.
+   */
+  bool lan_only;
+} CtServerConfig;
+
+/**
+ * Receives server events. `detail` is a NUL-terminated UTF-8 string valid only for the call.
+ */
+typedef void (*CtEventCallback)(void *ctx, CtEventKind kind, const char *detail);
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,6 +157,81 @@ const char *ct_version(void);
  * Initializes process-wide core state. Safe to call more than once.
  */
 CtStatus ct_core_init(void);
+
+/**
+ * Routes core logs to `callback`. `filter` uses tracing `EnvFilter` syntax (e.g. `"info"`);
+ * null means `"info"`. Can be installed once per process.
+ *
+ * # Safety
+ * `filter` must be null or a valid NUL-terminated string.
+ */
+CtStatus ct_set_log_callback(CtLogCallback callback, const char *filter);
+
+/**
+ * Generates a self-signed RSA-2048 TLS identity for `common_name` (e.g. `"macmini.local"`).
+ * On success fills `cert_out` (DER) and `key_out` (PKCS#8 DER); free both with `ct_buffer_free`.
+ *
+ * # Safety
+ * `common_name` must be a valid NUL-terminated string; `cert_out`/`key_out` must be valid
+ * writable pointers.
+ */
+CtStatus ct_generate_tls_identity(const char *common_name, CtBuffer *cert_out, CtBuffer *key_out);
+
+/**
+ * Frees a buffer returned by the core. Passing an empty/null buffer is a no-op.
+ *
+ * # Safety
+ * `buffer` must have come from the core and must not be freed twice.
+ */
+void ct_buffer_free(CtBuffer buffer);
+
+/**
+ * Returns the SHA-256 fingerprint (`AB:CD:…`) of a DER certificate, or null on bad input.
+ * Free with `ct_string_free`.
+ *
+ * # Safety
+ * `cert_der` must point to `len` readable bytes.
+ */
+char *ct_tls_fingerprint_sha256(const uint8_t *cert_der, size_t len);
+
+/**
+ * Frees a string returned by the core. Null is a no-op.
+ *
+ * # Safety
+ * `s` must have come from the core and must not be freed twice.
+ */
+void ct_string_free(char *s);
+
+/**
+ * Starts the RDP server. Returns null on failure and writes the reason to `out_status`
+ * (if non-null). Events are delivered to `callback` with `ctx` on a core thread, until
+ * `ct_server_stop` returns.
+ *
+ * # Safety
+ * `config` and the strings/buffers it points to must be valid for the duration of the call.
+ * `ctx` must remain valid, and be safe to use from any thread, until `ct_server_stop` returns.
+ */
+CtServer *ct_server_start(const CtServerConfig *config,
+                          CtEventCallback callback,
+                          void *ctx,
+                          CtStatus *out_status);
+
+/**
+ * Stops the server, waits for its thread to exit, and frees it. Null is a no-op.
+ * No events are delivered after this returns.
+ *
+ * # Safety
+ * `server` must come from `ct_server_start` and must not be used afterwards.
+ */
+void ct_server_stop(CtServer *server);
+
+/**
+ * The port the server is listening on, or 0 for a null server.
+ *
+ * # Safety
+ * `server` must be null or a live pointer from `ct_server_start`.
+ */
+uint16_t ct_server_port(const CtServer *server);
 
 #ifdef __cplusplus
 }  // extern "C"

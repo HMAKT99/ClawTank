@@ -33,7 +33,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.clawtank.ClawTank
-        OTHER_LDFLAGS: ["-lclawtank_core", "-framework", "Security", "-framework", "SystemConfiguration"]
+        # System libs the Rust staticlib needs (from `cargo rustc --release -- --print native-static-libs`).
+        OTHER_LDFLAGS: ["-lclawtank_core", "-lz", "-liconv", "-framework", "CoreFoundation", "-framework", "Security", "-framework", "SystemConfiguration"]
   ClawTankTests:
     type: bundle.unit-test
     platform: macOS
