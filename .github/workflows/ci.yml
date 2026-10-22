@@ -50,6 +50,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y freerdp3-x11 xvfb
       - name: Build test server
         run: cd core && cargo build --example testserver
+      - name: Build clawtank-mcp and check it answers MCP introspection on Linux
+        run: |
+          cd core && cargo build -p clawtank-mcp
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            | target/debug/clawtank-mcp | grep -q '"tools":\['
       - name: FreeRDP smoke test
         run: tests/freerdp-smoke.sh core/target/debug/examples/testserver
 
