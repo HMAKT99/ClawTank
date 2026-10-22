@@ -4,6 +4,10 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Documentation
+- README screenshots (Settings, connection guide), rendered from the app's views by an opt-in test (`TEST_RUNNER_CLAWTANK_SCREENSHOTS=<dir>`).
+- CodeQL scanning for Rust and the workflows; CI actions pinned to commit SHAs.
+
 ### Dependencies
 - `x509-cert` 0.3 (certificate fields are now accessor methods; `TlsIdentity::public_key` updated), `sha2` 0.11.1, `base64` 0.23.
 - CI: `actions/checkout` and `actions/upload-artifact` v7.

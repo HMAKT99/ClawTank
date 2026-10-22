@@ -37,6 +37,8 @@ For Xcode, run `make core project` and open `app/ClawTank.xcodeproj`. The projec
 | `make audit` | `cargo audit` of Rust dependencies |
 | `make package` / `make release` | Unsigned DMG / versioned release artifacts (see [docs/releasing.md](docs/releasing.md)) |
 
+**README screenshots** are rendered from the real views with sample data: `TEST_RUNNER_CLAWTANK_SCREENSHOTS=$PWD/docs/media make test-app`.
+
 **Testing against the running app without a GUI client.** `core/clawtank-core/examples/probe.rs` connects like a real client (TLS and NLA), and can measure video, input, resize and audio. The usage is in [docs/testing.md](docs/testing.md). Some live tests take over the mouse and keyboard, and the real-display tests are opt-in (`TEST_RUNNER_CLAWTANK_VD_TESTS=1`).
 
 ## Where things go

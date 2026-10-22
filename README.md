@@ -13,6 +13,11 @@ ClawTank is a native RDP server for macOS. Connect from any standard Remote Desk
 
 <!-- Demo GIF goes here: docs/media/demo.gif (a client connecting, moving windows, resizing). -->
 
+<p align="center">
+  <img src="docs/media/settings.png" width="49%" alt="ClawTank Settings window, General tab: start at login, keep awake, swap Ctrl and Command, stats overlay, sound and clipboard options">
+  <img src="docs/media/connect-guide.png" width="49%" alt="ClawTank's built-in connection guide showing steps to connect from a Mac with Windows App">
+</p>
+
 > **Status: 0.9 beta.** Every feature below is covered by automated tests, live measurements and a FreeRDP interop test on each commit. Hands-on testing with Microsoft's clients (Windows App, `mstsc`), headless Mac minis and real-world networks is under way: please [help test](#help-test-the-beta) or [report issues](https://github.com/HMAKT99/ClawTank/issues).
 
 ## Features
