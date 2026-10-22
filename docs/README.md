@@ -23,4 +23,4 @@
 | [Testing](testing.md) | Automated coverage, live measurements, and the manual checklist with results |
 | [Releasing](releasing.md) | `make release`, Developer ID signing and notarization, updates |
 | [Security policy](../SECURITY.md) | How to report a vulnerability |
-| [Phase plans](plans/) | Historical implementation plans from development |
+| [Phase plans](plans/README.md) | Historical working plans from development (not kept up to date) |

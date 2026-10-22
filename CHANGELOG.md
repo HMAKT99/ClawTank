@@ -4,11 +4,11 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
-### Documentation
-- Beta testing guide (docs/beta-testing.md) and issue forms for bug reports, beta test reports and feature requests.
-- Rewrote the architecture overview to match the code, added a docs index, SUPPORT.md, an expanded CONTRIBUTING.md and security scope, a PR template and Dependabot configuration.
+### Dependencies
+- `x509-cert` 0.3 (certificate fields are now accessor methods; `TlsIdentity::public_key` updated), `sha2` 0.11.1, `base64` 0.23.
+- CI: `actions/checkout` and `actions/upload-artifact` v7.
 
-## [0.9.0] - 2026-10-21
+## [0.9.0] - 2026-10-22
 
 First public beta. ClawTank is a native RDP server for macOS: connect from Windows App, `mstsc`, FreeRDP or any standard RDP client and get a hardware-accelerated desktop.
 
@@ -25,6 +25,8 @@ First public beta. ClawTank is a native RDP server for macOS: connect from Windo
 - A locked Mac shows only the wallpaper to remote clients until it's unlocked at the Mac (macOS limitation).
 - Manual checks against Windows `mstsc`/Windows App, a headless Mac mini and real-world Wi-Fi are still in progress. Please report issues.
 - No automatic updates yet: watch GitHub Releases.
+
+**Documentation:** a beta testing guide (docs/beta-testing.md), issue forms for bug reports, beta test reports and feature requests, a rewritten architecture overview, a docs index, SUPPORT.md, an expanded CONTRIBUTING.md and security scope, a PR template and Dependabot configuration.
 
 **Security:** built with tokio 1.54.1, which fixes RUSTSEC-2026-0384 (a race in `tokio::time::Interval`; ClawTank doesn't use it directly).
 
