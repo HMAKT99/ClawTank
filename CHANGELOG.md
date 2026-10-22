@@ -26,6 +26,8 @@ First public beta. ClawTank is a native RDP server for macOS: connect from Windo
 - Manual checks against Windows `mstsc`/Windows App, a headless Mac mini and real-world Wi-Fi are still in progress. Please report issues.
 - No automatic updates yet: watch GitHub Releases.
 
+**Security:** built with tokio 1.54.1, which fixes RUSTSEC-2026-0384 (a race in `tokio::time::Interval`; ClawTank doesn't use it directly).
+
 ### Phase 9 — Agent API and MCP (2026-10-21)
 - A local Agent API lets AI agents on the Mac take screenshots, click, type, press shortcuts, read the cursor and frontmost app, open apps, and create or remove virtual displays (docs/agent-api.md, ADR-023).
   - Off by default. Loopback only, with per-agent tokens (only hashes stored).
