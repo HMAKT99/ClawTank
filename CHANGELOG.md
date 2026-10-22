@@ -4,6 +4,10 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Documentation
+- Beta testing guide (docs/beta-testing.md) and issue forms for bug reports, beta test reports and feature requests.
+- Rewrote the architecture overview to match the code, added a docs index, SUPPORT.md, an expanded CONTRIBUTING.md and security scope, a PR template and Dependabot configuration.
+
 ## [0.9.0] - 2026-10-21
 
 First public beta. ClawTank is a native RDP server for macOS: connect from Windows App, `mstsc`, FreeRDP or any standard RDP client and get a hardware-accelerated desktop.

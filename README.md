@@ -2,11 +2,18 @@
 
 **RDP into your Mac. Open source, hardware-accelerated, no cloud.**
 
+[![CI](https://github.com/HMAKT99/ClawTank/actions/workflows/ci.yml/badge.svg)](https://github.com/HMAKT99/ClawTank/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/HMAKT99/ClawTank?include_prereleases&label=release)](https://github.com/HMAKT99/ClawTank/releases)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![Platform: macOS 14+ on Apple silicon](https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20Apple%20silicon-lightgrey)
+
+[Install](#install) · [Connect](#connect) · [FAQ](#faq) · [Troubleshooting](#troubleshooting) · [Documentation](docs/README.md) · [Help test the beta](#help-test-the-beta)
+
 ClawTank is a native RDP server for macOS. Connect from any standard Remote Desktop client to your Mac and get a smooth, full desktop: Windows App on Windows, Mac, iPad and iPhone, Microsoft's RDP app on Android, the built-in `mstsc` on Windows, or FreeRDP on Linux. It works especially well with a headless Mac mini.
 
 <!-- Demo GIF goes here: docs/media/demo.gif (a client connecting, moving windows, resizing). -->
 
-> **Status: 0.9 beta.** Everything below works and is tested. Manual checks on more client and network combinations are still in progress (see [Known limitations](#known-limitations)). Please [report issues](https://github.com/HMAKT99/ClawTank/issues).
+> **Status: 0.9 beta.** Every feature below is covered by automated tests, live measurements and a FreeRDP interop test on each commit. Hands-on testing with Microsoft's clients (Windows App, `mstsc`), headless Mac minis and real-world networks is under way: please [help test](#help-test-the-beta) or [report issues](https://github.com/HMAKT99/ClawTank/issues).
 
 ## Features
 
@@ -146,6 +153,18 @@ No. ClawTank makes no network connections of its own. It only accepts incoming R
 - No automatic updates yet: watch [Releases](https://github.com/HMAKT99/ClawTank/releases) on GitHub.
 - See [CHANGELOG.md](CHANGELOG.md) and [docs/testing.md](docs/testing.md) for what's been verified.
 
+## Help test the beta
+
+We're looking for people to try 0.9 on real setups: Windows and Mac clients, iPads, headless Mac minis, Wi-Fi and Tailscale. The [beta testing guide](docs/beta-testing.md) is a short script, about 5–15 minutes per section. Report each result, including passes, with the [Beta test report](https://github.com/HMAKT99/ClawTank/issues/new?template=beta_report.yml) form.
+
+## Documentation
+
+- [Remote access with Tailscale](docs/remote-access.md)
+- [Agent API and MCP server](docs/agent-api.md)
+- [Architecture](docs/architecture.md) and [design decisions](docs/decisions.md)
+- [Testing record](docs/testing.md) and [releasing](docs/releasing.md)
+- All docs: [docs/README.md](docs/README.md)
+
 ## Building from source
 
 Requirements: macOS 14+, Xcode 16+, Rust (stable, via rustup), `brew install xcodegen swiftlint`.
@@ -159,6 +178,10 @@ make release      # versioned DMG + SHA256SUMS + release notes in dist/
 ```
 
 To work in Xcode, run `make core project`, then open `app/ClawTank.xcodeproj`. Architecture: [docs/architecture.md](docs/architecture.md). Design decisions: [docs/decisions.md](docs/decisions.md).
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and conventions, including the clean-room rule. Please follow the [Code of Conduct](CODE_OF_CONDUCT.md). For help, see [SUPPORT.md](SUPPORT.md). To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 
 ## License
 

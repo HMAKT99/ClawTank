@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/HMAKT99/ClawTank/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue.
+  - name: Troubleshooting guide
+    url: https://github.com/HMAKT99/ClawTank#troubleshooting
+    about: Common connection, permission and performance problems, and how to fix them.

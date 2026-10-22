@@ -1,0 +1,59 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please check the [Troubleshooting](https://github.com/HMAKT99/ClawTank#troubleshooting) table and [Known limitations](https://github.com/HMAKT99/ClawTank#known-limitations) first.
+        **Security issues:** don't file them here. Use [private reporting](https://github.com/HMAKT99/ClawTank/security/advisories/new).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Connect from Windows App on …
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ClawTank version
+      description: Shown at the bottom of the ClawTank menu.
+      placeholder: "0.9.0"
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac model and macOS version
+      placeholder: "Mac mini M2, macOS 15.6.1, headless"
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: RDP client, version and client OS
+      placeholder: "Windows App 11.4.4 on macOS 15 / mstsc on Windows 11 24H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: Network
+      options: [Same machine (loopback), Same LAN – Wi-Fi, Same LAN – Ethernet, Tailscale, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Attach the zip from **ClawTank menu → Export Diagnostics…** (it contains no secrets), plus screenshots if useful.

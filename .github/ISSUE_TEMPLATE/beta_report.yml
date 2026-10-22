@@ -1,0 +1,63 @@
+name: Beta test report
+description: Report a result (pass or fail) from the 0.9 beta testing guide.
+title: "[Beta] <section>: <pass/fail> on <client>"
+labels: [beta-test]
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for testing! Please follow [docs/beta-testing.md](https://github.com/HMAKT99/ClawTank/blob/main/docs/beta-testing.md). Passes are as useful as failures.
+  - type: dropdown
+    id: section
+    attributes:
+      label: Section tested
+      multiple: true
+      options:
+        - 1. Install
+        - 2. First connection
+        - 3. Picture and smoothness
+        - 4. Keyboard and mouse
+        - 5. Sound, clipboard, files
+        - 6. Headless Mac mini
+        - 7. Away from home
+        - 8. Security spot checks
+        - 9. Agent API
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options: [Pass, Pass with issues, Fail]
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac model, macOS version, monitor or headless
+      placeholder: "MacBook Air M2, macOS 15.6.1, built-in display"
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Client app, version and client OS
+      placeholder: "Windows App 11.4.4 on iPad, iPadOS 18"
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: Network
+      options: [Same machine (loopback), Same LAN – Wi-Fi, Same LAN – Ethernet, Tailscale, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: What you saw
+      description: Anything unexpected, unclear in the docs, slow or broken. Include fps and round-trip time from the stats overlay if you tested section 3.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics and screenshots
+      description: For failures, attach the zip from **Export Diagnostics…** and note the time it happened.

@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /core
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns: ["*"]
+    ignore:
+      # IronRDP is pinned and partly vendored; upgrades are done by hand (ADR-001, ADR-017).
+      - dependency-name: "ironrdp*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
