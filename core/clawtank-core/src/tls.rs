@@ -81,8 +81,8 @@ impl TlsIdentity {
     pub fn public_key(&self) -> Result<Vec<u8>> {
         use x509_cert::der::Decode as _;
         let cert = x509_cert::Certificate::from_der(&self.cert_der)?;
-        cert.tbs_certificate
-            .subject_public_key_info
+        cert.tbs_certificate()
+            .subject_public_key_info()
             .subject_public_key
             .as_bytes()
             .map(<[u8]>::to_vec)
