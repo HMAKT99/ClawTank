@@ -5,6 +5,7 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Documentation
+- README: Mac to Mac use (a Mac mini or Mac Studio from a MacBook), a FAQ entry comparing it with macOS Screen Sharing, and a headless-Mac row in the comparison table.
 - README screenshots (Settings, connection guide), rendered from the app's views by an opt-in test (`TEST_RUNNER_CLAWTANK_SCREENSHOTS=<dir>`).
 - CodeQL scanning for Rust and the workflows; CI actions pinned to commit SHAs.
 

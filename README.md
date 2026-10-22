@@ -9,7 +9,9 @@
 
 [Install](#install) · [Connect](#connect) · [FAQ](#faq) · [Troubleshooting](#troubleshooting) · [Documentation](docs/README.md) · [Help test the beta](#help-test-the-beta)
 
-ClawTank is a native RDP server for macOS. Connect from any standard Remote Desktop client to your Mac and get a smooth, full desktop: Windows App on Windows, Mac, iPad and iPhone, Microsoft's RDP app on Android, the built-in `mstsc` on Windows, or FreeRDP on Linux. It works especially well with a headless Mac mini.
+ClawTank is a native RDP server for macOS. Connect from any standard Remote Desktop client to your Mac and get a smooth, full desktop: Windows App on Windows, Mac, iPad and iPhone, Microsoft's RDP app on Android, the built-in `mstsc` on Windows, or FreeRDP on Linux.
+
+**Have a Mac mini or Mac Studio at home?** Use it from your MacBook, a Windows PC, an iPad or Linux. The desktop fits your window at Retina sharpness, with no dummy display plug and no cloud.
 
 <!-- Demo GIF goes here: docs/media/demo.gif (a client connecting, moving windows, resizing). -->
 
@@ -47,6 +49,7 @@ ClawTank is a native RDP server for macOS. Connect from any standard Remote Desk
 | Traffic path | Direct (LAN or your own Tailscale) | Direct | Set up through Google's servers; relayed by Google when a direct path fails |
 | Hardware video encoding | ✅ H.264 | In High Performance mode (Mac to Mac, Apple silicon) | — |
 | Desktop resizes to the client window | ✅ | — | — |
+| Headless Mac without a dummy display plug | ✅ virtual display | — | — |
 | Price / license | Free, Apache-2.0 | Included with macOS | Free, closed source |
 
 Based on each product's public documentation. Corrections are welcome. "—" means we didn't verify it.
@@ -90,6 +93,8 @@ Use the address shown in the ClawTank menu (**Copy Address**), your ClawTank use
 1. Install **Windows App** from the Mac App Store.
 2. Click **+ → Add PC**. **PC name:** the Mac's address. **User account:** add your ClawTank username and password.
 3. Double-click the PC. Tip: in the PC's settings, turn on **Optimize for Retina displays** for crisp text.
+
+This is the setup for using a Mac mini or Mac Studio from a MacBook: the desktop is created at the MacBook window's size, so text is as sharp as on the MacBook's own screen.
 </details>
 
 <details><summary><b>iPad / iPhone / Android</b></summary>
@@ -122,6 +127,13 @@ So a leaked RDP password can't unlock your Mac, your Keychain or `sudo`. Change 
 
 **Can I connect while the Mac is locked or at the login window?**
 macOS doesn't let apps capture a locked screen: clients see only the wallpaper until someone unlocks the Mac at the keyboard. On an always-on Mac mini you can turn on automatic login (not available with FileVault), so the desktop is ready after a restart. Weigh that against who can physically reach the Mac. The ClawTank menu shows when the Mac is locked.
+
+**I only have Macs. Why not use macOS Screen Sharing?**
+Screen Sharing works well between Macs, and its High Performance mode uses hardware video on Apple silicon. ClawTank is for when you also want:
+- the desktop to resize to your client window, including on a headless Mac with no monitor or dummy plug
+- one server for every device: the same Mac mini from your MacBook, a Windows PC, an iPad, Android or Linux, using Microsoft's free clients
+
+We haven't benchmarked ClawTank against High Performance mode, so we don't claim it's faster.
 
 **Several people at once? Separate macOS users?**
 One RDP session at a time, showing the logged-in user's desktop. Separate sessions per macOS account aren't possible with public macOS APIs.
