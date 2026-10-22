@@ -376,8 +376,8 @@ pub unsafe extern "C" fn ct_generate_tls_identity(
         Ok(id) => {
             // SAFETY: both pointers were checked non-null and are writable per the contract.
             unsafe {
-                *cert_out = CtBuffer::from_vec(id.cert_der);
-                *key_out = CtBuffer::from_vec(id.key_pkcs8_der);
+                cert_out.write(CtBuffer::from_vec(id.cert_der));
+                key_out.write(CtBuffer::from_vec(id.key_pkcs8_der));
             }
             CtStatus::Ok
         }
@@ -454,7 +454,7 @@ pub unsafe extern "C" fn ct_server_start(
     };
     if !out_status.is_null() {
         // SAFETY: checked non-null; caller provides a writable CtStatus.
-        unsafe { *out_status = status };
+        unsafe { out_status.write(status) };
     }
     server
 }
@@ -781,10 +781,11 @@ pub unsafe extern "C" fn ct_clipboard_take_data(
     let Some((format, data)) = server.handle.clipboard().take_data() else {
         return 0;
     };
-    // SAFETY: checked non-null and writable per the contract.
+    // SAFETY: checked non-null and writable per the contract. `write` doesn't read or drop the
+    // previous contents, so the caller may pass uninitialized memory.
     unsafe {
-        *ok = data.is_some();
-        *out = CtBuffer::from_vec(data.unwrap_or_default());
+        ok.write(data.is_some());
+        out.write(CtBuffer::from_vec(data.unwrap_or_default()));
     }
     format
 }
@@ -915,10 +916,11 @@ pub unsafe extern "C" fn ct_clipboard_take_file(
     let Some(data) = server.handle.clipboard().take_file_contents(stream_id) else {
         return false;
     };
-    // SAFETY: checked non-null and writable per the contract.
+    // SAFETY: checked non-null and writable per the contract. `write` doesn't read or drop the
+    // previous contents, so the caller may pass uninitialized memory.
     unsafe {
-        *ok = data.is_some();
-        *out = CtBuffer::from_vec(data.unwrap_or_default());
+        ok.write(data.is_some());
+        out.write(CtBuffer::from_vec(data.unwrap_or_default()));
     }
     true
 }
