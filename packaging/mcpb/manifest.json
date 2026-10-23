@@ -1,0 +1,66 @@
+{
+  "manifest_version": "0.3",
+  "name": "clawtank",
+  "display_name": "ClawTank",
+  "version": "0.0.0",
+  "description": "Let agents see and drive your Mac: screenshots, clicks, typing, key combos, opening apps and headless virtual displays.",
+  "long_description": "Connects to the Agent API of the ClawTank app running on this Mac. Install ClawTank from https://github.com/HMAKT99/ClawTank/releases, turn on **Settings → Agents**, create a token and paste it here.\n\nThe API listens on 127.0.0.1 only. Each agent gets its own token, every action is written to an audit log, an on-screen badge with a **Stop** button shows while an agent is in control, and agent input pauses whenever a person uses the Mac.",
+  "author": {
+    "name": "Arun Kumar Thiagarajan",
+    "url": "https://github.com/HMAKT99"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HMAKT99/ClawTank"
+  },
+  "homepage": "https://github.com/HMAKT99/ClawTank",
+  "documentation": "https://github.com/HMAKT99/ClawTank/blob/main/docs/agent-api.md",
+  "support": "https://github.com/HMAKT99/ClawTank/issues",
+  "license": "Apache-2.0",
+  "keywords": ["macos", "computer-use", "automation", "screenshot", "virtual-display", "rdp"],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/clawtank-mcp",
+    "mcp_config": {
+      "command": "${__dirname}/server/clawtank-mcp",
+      "args": [],
+      "env": {
+        "CLAWTANK_AGENT_TOKEN": "${user_config.agent_token}",
+        "CLAWTANK_AGENT_URL": "${user_config.agent_url}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "list_displays", "description": "List this Mac's displays (id, size in points, scale, main, virtual)." },
+    { "name": "screenshot", "description": "Capture a display as an image. Coordinates for other tools are pixels of this image." },
+    { "name": "get_state", "description": "Cursor position, frontmost app, its focused window title, and whether the screen is locked." },
+    { "name": "click", "description": "Click at a point." },
+    { "name": "move_mouse", "description": "Move the pointer (hover)." },
+    { "name": "drag", "description": "Drag with the left button from one point to another." },
+    { "name": "scroll", "description": "Scroll by lines, optionally at a point." },
+    { "name": "press_key", "description": "Press a key or shortcut, e.g. \"cmd+space\"." },
+    { "name": "type_text", "description": "Type text into the focused field." },
+    { "name": "open_app", "description": "Open or bring to front an installed app by name or bundle id." },
+    { "name": "create_virtual_display", "description": "Create a virtual display (useful on a headless Mac)." },
+    { "name": "remove_virtual_display", "description": "Remove a virtual display created with create_virtual_display." }
+  ],
+  "compatibility": {
+    "platforms": ["darwin"]
+  },
+  "user_config": {
+    "agent_token": {
+      "type": "string",
+      "title": "Agent token",
+      "description": "Create one in ClawTank → Settings → Agents (starts with ct_).",
+      "sensitive": true,
+      "required": true
+    },
+    "agent_url": {
+      "type": "string",
+      "title": "Agent API address",
+      "description": "Change only if you changed the Agent API port in ClawTank.",
+      "default": "http://127.0.0.1:3390",
+      "required": false
+    }
+  }
+}

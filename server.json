@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.HMAKT99/clawtank",
+  "title": "ClawTank",
+  "description": "Let agents see and drive a Mac: screenshots, clicks, typing, apps and virtual displays.",
+  "repository": {
+    "url": "https://github.com/HMAKT99/ClawTank",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/HMAKT99/ClawTank/blob/main/docs/agent-api.md",
+  "version": "0.9.0",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/HMAKT99/ClawTank/releases/download/v0.9.0/clawtank-mcp-0.9.0-arm64.mcpb",
+      "fileSha256": "39d8e9e14032345765ff0075923a979f329d506ca390b56472f4a12c2d9e1af3",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "CLAWTANK_AGENT_TOKEN",
+          "description": "Agent token from ClawTank → Settings → Agents. Requires the ClawTank app running on this Mac.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "CLAWTANK_AGENT_URL",
+          "description": "Agent API address, if you changed its port.",
+          "default": "http://127.0.0.1:3390"
+        }
+      ]
+    }
+  ]
+}

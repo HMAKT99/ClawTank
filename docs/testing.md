@@ -107,3 +107,7 @@ Live, 2026-10-21, loopback, `files_demo` (examples/files_demo.rs) acting as the 
 - [ ] Human: on another Mac, or a fresh user account, a person who hasn't seen ClawTank installs from the README only (download → Open Anyway → setup → connect from a client). Note any step that needed help.
 - [ ] Human: record the demo GIF (docs/media/demo.gif) and enable it in the README.
 - [ ] Untested: Developer ID signing and notarization path (needs an Apple Developer account).
+
+## MCP Bundle
+- `scripts/package-mcpb.sh` checks that the bundled server starts and lists its tools. 2026-10-23: the 0.9.0 bundle lists all 12 tools and passes `mcpb validate` and `mcp-publisher validate`.
+- [ ] Human: double-click the `.mcpb` with Claude Desktop installed, enter a token, and ask Claude for a screenshot of the Mac.
