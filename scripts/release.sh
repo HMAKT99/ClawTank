@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds release artifacts from an already-built ClawTank.app:
-#   dist/ClawTank-<version>-<arch>.dmg, dist/SHA256SUMS, dist/RELEASE_NOTES.md
+#   dist/ClawTank-<version>-<arch>.dmg, dist/clawtank-mcp-<version>-arm64.mcpb, dist/server.json,
+#   dist/SHA256SUMS, dist/RELEASE_NOTES.md
 # and verifies them (DMG integrity, signature, architecture, versions).
 #
 # Signing: ad-hoc by default. With CLAWTANK_SIGN_IDENTITY="Developer ID Application: …" it signs
@@ -59,7 +60,11 @@ hdiutil detach -quiet "$mount"
 trap - EXIT
 rmdir "$mount"
 
-(cd dist && shasum -a 256 "$(basename "$dmg")" > SHA256SUMS)
+# The MCP server as an MCP Bundle for Claude Desktop and the MCP Registry (docs/releasing.md).
+mcpb="dist/clawtank-mcp-$version-arm64.mcpb"
+scripts/package-mcpb.sh "$version" "$app/Contents/MacOS/clawtank-mcp" "$mcpb" >/dev/null
+
+(cd dist && shasum -a 256 "$(basename "$dmg")" "$(basename "$mcpb")" > SHA256SUMS)
 
 # Release notes: this version's CHANGELOG section plus install instructions.
 {
@@ -83,7 +88,7 @@ rmdir "$mount"
     echo
     echo "Requires macOS 14 Sonoma or later on $( [[ "$arch" == arm64 ]] && echo "Apple silicon" || echo "$arch" )."
     echo
-    echo "SHA-256: \`$(cut -d' ' -f1 dist/SHA256SUMS)\`"
+    echo "SHA-256: \`$(head -1 dist/SHA256SUMS | cut -d' ' -f1)\`"
 } > dist/RELEASE_NOTES.md
 
 echo "Release $version ($arch, signature: ${signature:-adhoc}):"

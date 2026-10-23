@@ -4,6 +4,9 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### MCP
+- The MCP server is packaged as an MCP Bundle (`clawtank-mcp-<version>-arm64.mcpb`) for one-click install in Claude Desktop, and listed in the MCP Registry as `io.github.HMAKT99/clawtank` (`server.json`). `make release` builds both.
+
 ### Documentation
 - README: Mac to Mac use (a Mac mini or Mac Studio from a MacBook), a FAQ entry comparing it with macOS Screen Sharing, and a headless-Mac row in the comparison table.
 - README screenshots (Settings, connection guide), rendered from the app's views by an opt-in test (`TEST_RUNNER_CLAWTANK_SCREENSHOTS=<dir>`).

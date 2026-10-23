@@ -17,6 +17,10 @@ ClawTank can let AI agents running **on the same Mac** see the screen and use th
 
    Any MCP client works the same way: run that binary over stdio with `CLAWTANK_AGENT_TOKEN` set. If you changed the port, also set `CLAWTANK_AGENT_URL=http://127.0.0.1:<port>`.
 
+   **Claude Desktop.** Download `clawtank-mcp-<version>-arm64.mcpb` from [Releases](https://github.com/HMAKT99/ClawTank/releases) and double-click it. Claude Desktop asks for the token. The bundle contains the same `clawtank-mcp` as the app, so ClawTank itself must still be installed and running.
+
+   The server is also listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.HMAKT99/clawtank`.
+
 ClawTank needs Screen Recording (for screenshots) and Accessibility (for input). It already asks for both during setup.
 
 ## What a person sees

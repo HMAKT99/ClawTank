@@ -6,6 +6,8 @@
 2. Move the changes under a `## [x.y.z] - YYYY-MM-DD` heading in `CHANGELOG.md`. The release notes are generated from it.
 3. Run `make lint test`, then `make release`. This creates the following in `dist/`:
    - `ClawTank-x.y.z-arm64.dmg`: the app plus an /Applications link
+   - `clawtank-mcp-x.y.z-arm64.mcpb`: the MCP server as an MCP Bundle (Claude Desktop, MCP Registry)
+   - `server.json`: the MCP Registry entry for that bundle, with its SHA-256
    - `SHA256SUMS`
    - `RELEASE_NOTES.md`: the changelog section plus install steps
 
@@ -14,10 +16,19 @@
    Release builds go to `build/release/`, so they never replace your dev-signed `app/build` app and its permissions.
 4. Create a **draft** GitHub Release and review it before publishing:
    ```sh
-   gh release create vX.Y.Z dist/ClawTank-*.dmg dist/SHA256SUMS --draft \
+   gh release create vX.Y.Z dist/ClawTank-*.dmg dist/clawtank-mcp-*.mcpb dist/SHA256SUMS --draft \
      --title "ClawTank X.Y.Z" --notes-file dist/RELEASE_NOTES.md
    ```
    Add `--prerelease` for betas.
+
+## MCP Registry
+
+After the release is published (the registry needs the `.mcpb` download URL to work), copy `dist/server.json` over the repo's `server.json`, commit it, and publish with [`mcp-publisher`](https://github.com/modelcontextprotocol/registry/releases):
+
+```sh
+mcp-publisher login github   # once; signs in as HMAKT99, which owns io.github.HMAKT99/*
+mcp-publisher publish        # from the repository root
+```
 
 ## Signing and notarization (Developer ID)
 
