@@ -13,7 +13,9 @@ ClawTank is a native RDP server for macOS. Connect from any standard Remote Desk
 
 **Have a Mac mini or Mac Studio at home?** Use it from your MacBook, a Windows PC, an iPad or Linux. The desktop fits your window at Retina sharpness, with no dummy display plug and no cloud.
 
-<!-- Demo GIF goes here: docs/media/demo.gif (a client connecting, moving windows, resizing). -->
+<p align="center">
+  <img src="docs/media/hero.png" width="100%" alt="A MacBook, a Windows PC, an iPad or iPhone, and a Linux PC connect over RDP (TLS + NLA, H.264, audio, clipboard) to a Mac mini or Mac Studio running ClawTank">
+</p>
 
 <p align="center">
   <img src="docs/media/settings.png" width="49%" alt="ClawTank Settings window, General tab: start at login, keep awake, swap Ctrl and Command, stats overlay, sound and clipboard options">
