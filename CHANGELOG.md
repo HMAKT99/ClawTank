@@ -14,6 +14,7 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 - CodeQL scanning for Rust and the workflows; CI actions pinned to commit SHAs.
 
 ### Dependencies
+- `crypto-bigint` 0.7.6 and `ctutils` 0.4.5 for RUSTSEC-2026-0387 and RUSTSEC-2026-0385 (timing side channels in constant-time code).
 - `x509-cert` 0.3 (certificate fields are now accessor methods; `TlsIdentity::public_key` updated), `sha2` 0.11.1, `base64` 0.23.
 - CI: `actions/checkout` and `actions/upload-artifact` v7.
 
