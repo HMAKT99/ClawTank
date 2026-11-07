@@ -6,6 +6,7 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ### MCP
 - The MCP server is packaged as an MCP Bundle (`clawtank-mcp-<version>-arm64.mcpb`) for one-click install in Claude Desktop, and listed in the MCP Registry as `io.github.HMAKT99/clawtank` (`server.json`). `make release` builds both.
+- OpenClaw skill `clawtank-mac` on ClawHub (`packaging/openclaw/clawtank-mac/SKILL.md`): screenshots, input, apps and virtual displays through the Agent API.
 
 ### Documentation
 - README hero diagram (clients → Mac mini running ClawTank) in place of the demo-GIF placeholder, and a GitHub social preview image (`docs/media/*.svg` are the sources).
