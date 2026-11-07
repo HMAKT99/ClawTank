@@ -6,6 +6,7 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ### MCP
 - The MCP server is packaged as an MCP Bundle (`clawtank-mcp-<version>-arm64.mcpb`) for one-click install in Claude Desktop, and listed in the MCP Registry as `io.github.HMAKT99/clawtank` (`server.json`). `make release` builds both.
+- OpenClaw skill `clawtank-mac` on ClawHub (`packaging/openclaw/clawtank-mac/SKILL.md`): screenshots, input, apps and virtual displays through the Agent API.
 
 ### Documentation
 - README hero diagram (clients → Mac mini running ClawTank) in place of the demo-GIF placeholder, and a GitHub social preview image (`docs/media/*.svg` are the sources).
@@ -14,6 +15,7 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 - CodeQL scanning for Rust and the workflows; CI actions pinned to commit SHAs.
 
 ### Dependencies
+- `libz-sys` 1.1.31 for RUSTSEC-2026-0418 (build script leaked environment variables into the build directory).
 - `crypto-bigint` 0.7.6 and `ctutils` 0.4.5 for RUSTSEC-2026-0387 and RUSTSEC-2026-0385 (timing side channels in constant-time code).
 - `x509-cert` 0.3 (certificate fields are now accessor methods; `TlsIdentity::public_key` updated), `sha2` 0.11.1, `base64` 0.23.
 - CI: `actions/checkout` and `actions/upload-artifact` v7.

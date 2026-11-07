@@ -19,6 +19,8 @@ ClawTank can let AI agents running **on the same Mac** see the screen and use th
 
    **Claude Desktop.** Download `clawtank-mcp-<version>-arm64.mcpb` from [Releases](https://github.com/HMAKT99/ClawTank/releases) and double-click it. Claude Desktop asks for the token. The bundle contains the same `clawtank-mcp` as the app, so ClawTank itself must still be installed and running.
 
+   **OpenClaw.** Install the skill from ClawHub with `clawhub install clawtank-mac` and give OpenClaw the token as `CLAWTANK_AGENT_TOKEN` (see the skill's setup). The skill's source is [`packaging/openclaw/clawtank-mac/SKILL.md`](../packaging/openclaw/clawtank-mac/SKILL.md).
+
    The server is also listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.HMAKT99/clawtank`.
 
 ClawTank needs Screen Recording (for screenshots) and Accessibility (for input). It already asks for both during setup.
