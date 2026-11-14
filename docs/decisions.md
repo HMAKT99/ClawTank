@@ -71,7 +71,7 @@ Format: context → decision → consequences. Newest last. Status is *Accepted*
 ## ADR-014 — EGFX AVC420 only in Phase 2; legacy clients see the test pattern
 **Context.** Every target client (mstsc, Windows App, FreeRDP) supports the Graphics Pipeline with AVC420. A bitmap or RemoteFX fallback for clients without EGFX would mean a second, CPU-heavy video path.
 **Decision.** Live video goes only over EGFX AVC420. A client that doesn't open the graphics channel keeps the static test frame from the legacy display handler. The H.264 bitstream is Annex-B, per MS-RDPEGFX RFX_AVC420_BITMAP_STREAM (IronRDP's client docs say "AVC length-prefixed", which conflicts with the spec). Coded size is 16-aligned, with ScreenCaptureKit placing content top-left via `destinationRect`, and the region rect crops to the desktop size.
-**Consequences.** We revisit a fallback if a real client needs one.
+**Consequences.** We revisit a fallback if a real client needs one. (Revisited: ADR-025.)
 
 ## ADR-015 — Dev builds signed with a local self-signed identity
 **Context.** TCC (Screen Recording, Accessibility) and the Keychain pin ad-hoc-signed apps to their build hash, so every rebuild loses permission grants. The maintainer can't unlock the login keychain.
@@ -166,3 +166,11 @@ It shows the MagicDNS name or IP in the menu, Settings → Remote Access (a guid
 - Users do a one-time "Open Anyway". TCC permissions reset on each update, since an ad-hoc identity changes every build; the README FAQ covers this.
 - Apple silicon only (Intel: build from source).
 - Revisit when a Developer ID is available: test notarization, then add Sparkle with EdDSA-signed appcasts.
+
+## ADR-025 — ClearCodec raw-frame path for EGFX clients without AVC
+**Context.** Windows App / Microsoft Remote Desktop on Android (and on iPad, issue #10) connected, then dropped with "protocol error" right after the first frame. Those clients advertise EGFX capability sets with `AVC_DISABLED`. `ironrdp-egfx` 0.3.0 confirms `client & server` flags and its default server sets don't contain `AVC_DISABLED`, so the flag was stripped, the client was told AVC is on, and it received AVC420 it can't decode. (Fixed upstream in IronRDP #1490, not in a release we can use with `ironrdp-server` 0.13.)
+**Decision.**
+- Our `GraphicsPipelineHandler::preferred_capabilities` offers the same version ladder as IronRDP's default but with `AVC_DISABLED` in the V10/V10.7 sets, so the intersection keeps the flag exactly when the client sent it. Clients that don't send it negotiate what they did before.
+- `on_ready` derives AVC support from the confirmed set (`gfx::avc420_allowed`). `VideoHub::codec` / `ct_server_video_codec` tell the host which path to use when `VideoStart` arrives; `submit_h264` refuses frames for a non-AVC session.
+- Non-AVC path: the host captures BGRA (≤ 30 fps) and calls `ct_server_submit_bgra`. The core diffs against what the client shows, encodes changed ~64×64 tiles with IronRDP's ClearCodec encoder (residual layer, lossless; mandatory for every EGFX client) and sends them in one `send_mixed_frame`. Tiles are always > 1024 px so the encoder's glyph cache stays unused; we write the ClearCodec `seqNumber` ourselves and only advance it for frames actually queued. Frames refused under backpressure need no keyframe: the next one is diffed against the client's real state, and the host retries the newest unsent frame so a static screen still converges.
+**Consequences.** Mobile clients work, at higher bandwidth than H.264 for photo/video content (fine on a LAN, heavier over Tailscale). Upgrading to an IronRDP with #1490 + a Planar/progressive sender could replace this. Needs testing on real Android/iOS devices; the test suite covers negotiation and ClearCodec round-trips with IronRDP's client.

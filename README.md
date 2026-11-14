@@ -162,6 +162,7 @@ No. ClawTank makes no network connections of its own. It only accepts incoming R
 | Black screen | Grant **Screen Recording**, then quit and reopen ClawTank. |
 | No sound | Check **Settings → General → Play this Mac's sound on the client**, and turn on audio in your client's settings. |
 | Ctrl+C doesn't copy (from Windows) | Turn on **Settings → General → Swap Ctrl and ⌘**. |
+| "Protocol error" right after login on Android / iPad / iPhone | Update ClawTank: older builds sent H.264 to the mobile Windows App, which has it disabled. Mobile clients now get a lossless tile stream (a bit more bandwidth than desktop clients). |
 | Choppy over Wi-Fi | Lower **Settings → Display & Quality**, or use Ethernet on the Mac. The menu shows live fps and round-trip time. |
 | Anything else | **Menu → Export Diagnostics…** creates a zip with no secrets in it. Attach it to an [issue](https://github.com/HMAKT99/ClawTank/issues). |
 

@@ -203,6 +203,32 @@ final class RdpServer: @unchecked Sendable {
         }
     }
 
+    /// How the current session wants video (read on `videoStart`).
+    enum VideoCodec {
+        /// H.264 via `submitH264`.
+        case h264
+        /// Raw BGRA via `submitBGRA`: the client has no H.264 decoder (Windows App on Android/iOS).
+        case raw
+    }
+
+    var videoCodec: VideoCodec {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let handle else { return .h264 }
+        return ct_server_video_codec(handle) == CT_VIDEO_CODEC_RAW ? .raw : .h264
+    }
+
+    /// Hands one raw BGRA frame (top-down rows, `stride` bytes apart; the top-left
+    /// `width`×`height` pixels are read before returning) to the core. Thread-safe.
+    func submitBGRA(_ base: UnsafeRawPointer, length: Int, width: Int, height: Int, stride: Int) -> SubmitResult {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let handle else { return .notReady }
+        let result = ct_server_submit_bgra(handle, base.assumingMemoryBound(to: UInt8.self), length,
+                                           UInt16(clamping: width), UInt16(clamping: height), stride)
+        return result == CT_SUBMIT_RESULT_SENT ? .sent : .notReady
+    }
+
     /// Interleaved 16-bit PCM in the negotiated format. Thread-safe.
     @discardableResult
     func submitAudio(_ pcm: Data) -> Bool {
