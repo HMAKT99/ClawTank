@@ -20,7 +20,7 @@ use crate::events::CoreEvent;
 use crate::input::InputEvent;
 use crate::server::{self, ServerConfig, ServerHandle};
 use crate::tls::TlsIdentity;
-use crate::video::SubmitResult;
+use crate::video::{SubmitResult, VideoCodec};
 
 /// Result code for FFI calls.
 #[repr(C)]
@@ -60,6 +60,7 @@ pub enum CtEventKind {
     /// Server loop failed. Detail: error message.
     Error = 6,
     /// Client graphics pipeline ready: start capture + encode. Detail: `"WIDTHxHEIGHT"`.
+    /// Check `ct_server_video_codec` to know whether to submit H.264 or raw BGRA.
     VideoStart = 7,
     /// Graphics pipeline closed: stop capture + encode. Detail: empty.
     VideoStop = 8,
@@ -99,6 +100,17 @@ pub enum CtSubmitResult {
     NotReady = 1,
     /// Not sent; the next submitted frame must be a keyframe (IDR).
     NeedKeyframe = 2,
+}
+
+/// How video must be submitted for the current session (`ct_server_video_codec`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CtVideoCodec {
+    /// H.264 with `ct_server_submit_h264`.
+    H264 = 0,
+    /// Raw BGRA frames with `ct_server_submit_bgra`: the client negotiated the graphics
+    /// pipeline without AVC (Windows App on Android/iOS).
+    Raw = 1,
 }
 
 /// Video counters for the current session.
@@ -605,6 +617,41 @@ pub unsafe extern "C" fn ct_server_submit_h264(
     }
 }
 
+/// Submits one raw frame for a session whose `ct_server_video_codec` is `Raw`: 32-bit BGRA
+/// (alpha ignored), rows top-down and `stride` bytes apart; the top-left `width`×`height`
+/// pixels (the session size) are read. Only changed areas are sent. Returns `NotReady` when
+/// the frame was not sent (no session, H.264 session, stale size, backpressure); the next
+/// frame is diffed against what the client actually shows, so no keyframe is ever owed.
+/// The pixels are read before returning. Thread-safe; never blocks on the network.
+/// Must not be called from inside the event callback.
+///
+/// # Safety
+/// `server` must be a live pointer from `ct_server_start`; `data` must point to `len`
+/// readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_server_submit_bgra(
+    server: *const CtServer,
+    data: *const u8,
+    len: usize,
+    width: u16,
+    height: u16,
+    stride: usize,
+) -> CtSubmitResult {
+    // SAFETY: caller guarantees `data` points to `len` readable bytes.
+    let (Some(server), Some(data)) = (unsafe { server.as_ref() }, unsafe { bytes(data, len) })
+    else {
+        return CtSubmitResult::NotReady;
+    };
+    match server
+        .handle
+        .video()
+        .submit_bgra(data, width, height, stride)
+    {
+        SubmitResult::Sent => CtSubmitResult::Sent,
+        SubmitResult::NotReady | SubmitResult::NeedKeyframe => CtSubmitResult::NotReady,
+    }
+}
+
 /// Sets the client-side cursor shape: 32 bpp **BGRA, straight alpha, rows bottom-up**,
 /// at most 96×96, hotspot inside. Returns false for invalid input. Sessions starting later
 /// receive the latest shape.
@@ -948,6 +995,20 @@ pub unsafe extern "C" fn ct_server_video_can_accept(server: *const CtServer) -> 
     unsafe { server.as_ref() }.is_some_and(|s| s.handle.video().can_accept())
 }
 
+/// How the host must submit video for the current session; valid from `VideoStart` on.
+/// `H264` for a null server.
+///
+/// # Safety
+/// `server` must be null or a live pointer from `ct_server_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ct_server_video_codec(server: *const CtServer) -> CtVideoCodec {
+    // SAFETY: null or live per the contract.
+    match unsafe { server.as_ref() }.map(|s| s.handle.video().codec()) {
+        Some(VideoCodec::Raw) => CtVideoCodec::Raw,
+        _ => CtVideoCodec::H264,
+    }
+}
+
 /// Video counters for the current session (zeros for a null server).
 ///
 /// # Safety
@@ -1142,7 +1203,12 @@ mod tests {
                 ct_server_submit_h264(null(), null(), 0, true, 0, 0),
                 CtSubmitResult::NotReady
             );
+            assert_eq!(
+                ct_server_submit_bgra(null(), null(), 0, 0, 0, 0),
+                CtSubmitResult::NotReady
+            );
             assert!(!ct_server_video_can_accept(null()));
+            assert_eq!(ct_server_video_codec(null()), CtVideoCodec::H264);
             assert_eq!(ct_server_video_stats(null()), CtVideoStats::default());
             ct_server_stop(null_mut());
             ct_string_free(null_mut());

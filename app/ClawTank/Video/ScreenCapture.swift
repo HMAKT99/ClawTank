@@ -1,6 +1,7 @@
 // Captures the main display with ScreenCaptureKit as IOSurface-backed NV12 pixel buffers,
 // ready for VideoToolbox without any CPU copy. Frames are delivered only when the screen
 // changed (`SCFrameStatus.complete`), so a static screen costs nothing downstream.
+// Clients without H.264 get BGRA buffers instead (`Configuration.pixelFormat`).
 
 import CoreMedia
 import CoreVideo
@@ -21,6 +22,8 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         var showsCursor = false
         /// Display size in points; content is fitted (aspect preserved, centred) into the session.
         var displaySize = CGSize(width: 1, height: 1)
+        /// NV12 for the H.264 encoder; 32BGRA for the raw path (clients without H.264).
+        var pixelFormat: OSType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
 
         /// Where the display lands inside the session rectangle. Matches `CoordinateMapper`.
         var contentRect: CGRect {
@@ -55,8 +58,10 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         cfg.destinationRect = config.contentRect
         cfg.scalesToFit = true
         cfg.preservesAspectRatio = false
-        cfg.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-        cfg.colorMatrix = kCVImageBufferYCbCrMatrix_ITU_R_709_2
+        cfg.pixelFormat = config.pixelFormat
+        if config.pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange {
+            cfg.colorMatrix = kCVImageBufferYCbCrMatrix_ITU_R_709_2
+        }
         cfg.colorSpaceName = CGColorSpace.sRGB
         cfg.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(config.frameRate))
         cfg.queueDepth = 4

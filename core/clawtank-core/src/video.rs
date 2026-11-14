@@ -11,6 +11,12 @@
 //! - Lock order is always `inner` then the pipeline mutex. IronRDP calls our
 //!   `GraphicsPipelineHandler` while holding the pipeline mutex, so handler callbacks only
 //!   touch atomics (never `inner`).
+//!
+//! Clients that negotiate EGFX without AVC (`AVC_DISABLED`: the Windows App on Android and
+//! iOS) can't decode H.264. For them [`VideoHub::codec`] reports [`VideoCodec::Raw`] and the
+//! host submits raw BGRA frames with [`VideoHub::submit_bgra`] instead: we diff them against
+//! the last frame the client received and send the changed tiles losslessly with ClearCodec
+//! (MS-RDPEGFX 2.2.4.1), which every EGFX client must support.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -18,7 +24,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
 
 use ironrdp_egfx::pdu::Avc420Region;
+use ironrdp_egfx::server::{GraphicsPipelineServer, MixedTilePayload};
+use ironrdp_graphics::clearcodec::ClearCodecEncoder;
 use ironrdp_pdu::gcc::{Monitor, MonitorFlags};
+use ironrdp_pdu::geometry::ExclusiveRectangle;
 use ironrdp_server::{EgfxServerMessage, GfxServerHandle, ServerEvent};
 use ironrdp_svc::ChannelFlags;
 use tokio::sync::mpsc::UnboundedSender;
@@ -35,6 +44,40 @@ pub enum SubmitResult {
     NotReady,
     /// Not sent; the host must send a keyframe next.
     NeedKeyframe,
+}
+
+/// How the host must feed video for the current session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoCodec {
+    /// H.264 access units via [`VideoHub::submit_h264`] (EGFX AVC420).
+    H264,
+    /// Raw BGRA frames via [`VideoHub::submit_bgra`] (EGFX ClearCodec tiles); the client
+    /// negotiated EGFX with AVC disabled.
+    Raw,
+}
+
+/// Tile edge for the raw path. Remainders narrower than [`MIN_TILE`] are merged into the
+/// previous tile so every tile has more than 1024 pixels: IronRDP's ClearCodec encoder only
+/// uses its glyph cache for tiles of at most 1024 pixels, and we keep it out of play (see
+/// `submit_bgra` on sequence numbers).
+const TILE: usize = 64;
+const MIN_TILE: usize = 33;
+
+/// Splits `0..len` into `(start, size)` spans of about [`TILE`].
+fn tile_spans(len: usize) -> Vec<(usize, usize)> {
+    let mut spans = Vec::with_capacity(len / TILE + 1);
+    let mut start = 0;
+    while start < len {
+        let remaining = len - start;
+        let size = if remaining < TILE + MIN_TILE {
+            remaining
+        } else {
+            TILE
+        };
+        spans.push((start, size));
+        start += size;
+    }
+    spans
 }
 
 /// Counters for the stats readout. All monotonic within a session.
@@ -62,6 +105,8 @@ pub struct VideoHub {
     /// held) and from `submit_h264` *after* the pipeline mutex is released, never nested.
     send_times: Mutex<HashMap<u32, Instant>>,
     ack_latency_us: AtomicU32,
+    /// Whether the negotiated EGFX capabilities allow AVC420 (set before `VideoStart`).
+    avc: AtomicBool,
 }
 
 struct Inner {
@@ -73,6 +118,12 @@ struct Inner {
     frames_sent: u64,
     bytes_sent: u64,
     frames_dropped: u64,
+    /// Raw path: what the client's surface currently shows (tightly packed BGRA at the session
+    /// size), or empty if the next frame must be sent whole.
+    shown: Vec<u8>,
+    clear: ClearCodecEncoder,
+    /// Next ClearCodec `seqNumber`; advanced only for streams actually sent.
+    clear_seq: u8,
 }
 
 fn pack(width: u16, height: u16) -> u32 {
@@ -96,12 +147,16 @@ impl VideoHub {
                 frames_sent: 0,
                 bytes_sent: 0,
                 frames_dropped: 0,
+                shown: Vec::new(),
+                clear: ClearCodecEncoder::new(),
+                clear_seq: 0,
             }),
             channel_open: AtomicBool::new(false),
             session_size: AtomicU32::new(pack(1920, 1080)),
             frames_acked: AtomicU64::new(0),
             send_times: Mutex::new(HashMap::new()),
             ack_latency_us: AtomicU32::new(0),
+            avc: AtomicBool::new(true),
         }
     }
 
@@ -134,6 +189,10 @@ impl VideoHub {
         inner.frames_sent = 0;
         inner.bytes_sent = 0;
         inner.frames_dropped = 0;
+        inner.shown.clear();
+        inner.clear = ClearCodecEncoder::new();
+        inner.clear_seq = 0;
+        self.avc.store(true, Ordering::Release);
         self.frames_acked.store(0, Ordering::Release);
         self.ack_latency_us.store(0, Ordering::Release);
         self.send_times
@@ -153,6 +212,7 @@ impl VideoHub {
             let mut inner = self.lock();
             inner.surface = None;
             inner.need_keyframe = true;
+            inner.shown.clear();
         }
         if self.channel_open.load(Ordering::Acquire) {
             info!(width, height, scale_percent, "Resizing video");
@@ -164,11 +224,13 @@ impl VideoHub {
         }
     }
 
-    /// Handler callback: capabilities negotiated, frames may flow.
-    pub(crate) fn on_ready(&self) {
+    /// Handler callback: capabilities negotiated, frames may flow. `avc` says whether the
+    /// client accepts AVC420; the host reads it back through [`Self::codec`] on `VideoStart`.
+    pub(crate) fn on_ready(&self, avc: bool) {
         let (w, h) = self.session_size();
+        self.avc.store(avc, Ordering::Release);
         if !self.channel_open.swap(true, Ordering::AcqRel) {
-            info!(width = w, height = h, "EGFX ready; requesting video");
+            info!(width = w, height = h, avc, "EGFX ready; requesting video");
             (self.sink)(CoreEvent::VideoStart {
                 width: w,
                 height: h,
@@ -212,6 +274,16 @@ impl VideoHub {
         inner.handle = None;
         inner.surface = None;
         inner.need_keyframe = true;
+        inner.shown.clear();
+    }
+
+    /// How the host must submit frames for the current session.
+    pub fn codec(&self) -> VideoCodec {
+        if self.avc.load(Ordering::Acquire) {
+            VideoCodec::H264
+        } else {
+            VideoCodec::Raw
+        }
     }
 
     /// Cheap check the host can make before spending time encoding.
@@ -255,6 +327,10 @@ impl VideoHub {
         if data.is_empty() || !self.channel_open.load(Ordering::Acquire) {
             return SubmitResult::NotReady;
         }
+        if !self.avc.load(Ordering::Acquire) {
+            // The client can't decode H.264; sending it is what makes it disconnect.
+            return SubmitResult::NotReady;
+        }
         if (width, height) != self.session_size() {
             debug!(width, height, session = ?self.session_size(), "Dropping frame for a stale size");
             return SubmitResult::NotReady;
@@ -275,27 +351,8 @@ impl VideoHub {
             if !gfx.is_ready() {
                 return SubmitResult::NotReady;
             }
-            let surface = match inner.surface {
-                Some(id) => id,
-                None => {
-                    // ResetGraphics with one primary monitor, then a surface mapped at (0,0).
-                    let monitor = Monitor {
-                        left: 0,
-                        top: 0,
-                        right: i32::from(w) - 1,
-                        bottom: i32::from(h) - 1,
-                        flags: MonitorFlags::PRIMARY,
-                    };
-                    gfx.resize_with_monitors(w, h, vec![monitor]);
-                    let Some(id) = gfx.create_surface(w, h) else {
-                        warn!("EGFX surface creation failed");
-                        return SubmitResult::NotReady;
-                    };
-                    gfx.map_surface_to_output(id, 0, 0);
-                    debug!(surface = id, w, h, "EGFX surface ready");
-                    inner.surface = Some(id);
-                    id
-                }
+            let Some(surface) = Self::ensure_surface(&mut inner, &mut gfx, w, h) else {
+                return SubmitResult::NotReady;
             };
             let region = Avc420Region {
                 left: 0,
@@ -310,14 +367,69 @@ impl VideoHub {
         };
         let sent = frame_id.is_some();
         if let Some(frame_id) = frame_id {
-            let mut times = self.send_times.lock().unwrap_or_else(|e| e.into_inner());
-            // Bounded: a client that stops acking must not grow this forever.
-            if times.len() > 256 {
-                times.clear();
-            }
-            times.insert(frame_id, Instant::now());
+            self.record_send(frame_id);
         }
 
+        Self::post(&sender, channel_id, messages);
+
+        if sent {
+            inner.need_keyframe = false;
+            inner.frames_sent += 1;
+            inner.bytes_sent += data.len() as u64;
+            SubmitResult::Sent
+        } else {
+            inner.need_keyframe = true;
+            inner.frames_dropped += 1;
+            SubmitResult::NeedKeyframe
+        }
+    }
+
+    /// The EGFX surface for the session size, creating it (ResetGraphics with one primary
+    /// monitor, then a surface mapped at (0,0)) if there is none yet.
+    fn ensure_surface(
+        inner: &mut Inner,
+        gfx: &mut GraphicsPipelineServer,
+        w: u16,
+        h: u16,
+    ) -> Option<u16> {
+        if let Some(id) = inner.surface {
+            return Some(id);
+        }
+        let monitor = Monitor {
+            left: 0,
+            top: 0,
+            right: i32::from(w) - 1,
+            bottom: i32::from(h) - 1,
+            flags: MonitorFlags::PRIMARY,
+        };
+        gfx.resize_with_monitors(w, h, vec![monitor]);
+        let Some(id) = gfx.create_surface(w, h) else {
+            warn!("EGFX surface creation failed");
+            return None;
+        };
+        gfx.map_surface_to_output(id, 0, 0);
+        debug!(surface = id, w, h, "EGFX surface ready");
+        inner.surface = Some(id);
+        // A new surface starts blank: the raw path must repaint everything.
+        inner.shown.clear();
+        Some(id)
+    }
+
+    fn record_send(&self, frame_id: u32) {
+        let mut times = self.send_times.lock().unwrap_or_else(|e| e.into_inner());
+        // Bounded: a client that stops acking must not grow this forever.
+        if times.len() > 256 {
+            times.clear();
+        }
+        times.insert(frame_id, Instant::now());
+    }
+
+    /// Posts drained EGFX output to the session loop.
+    fn post(
+        sender: &UnboundedSender<ServerEvent>,
+        channel_id: Option<u32>,
+        messages: Vec<ironrdp_dvc::DvcMessage>,
+    ) {
         if !messages.is_empty()
             && let Some(channel_id) = channel_id
         {
@@ -334,16 +446,126 @@ impl VideoHub {
                 Err(e) => warn!(error = %e, "Failed to encode EGFX messages"),
             }
         }
+    }
 
-        if sent {
-            inner.need_keyframe = false;
+    /// Queues one raw frame for a client without AVC (see [`VideoCodec::Raw`]): `data` is
+    /// 32-bit BGRA (alpha ignored), rows top-down, `stride` bytes apart; only the top-left
+    /// `width`×`height` pixels are read. Frames for any size other than the session size are
+    /// refused with `NotReady`, as is everything while the session uses H.264.
+    ///
+    /// Only tiles that differ from what the client already shows are encoded. A frame that
+    /// can't be sent (backpressure) is simply dropped: the next one is diffed against what the
+    /// client really has, so nothing is lost. `Sent` is also returned when nothing changed.
+    pub fn submit_bgra(&self, data: &[u8], width: u16, height: u16, stride: usize) -> SubmitResult {
+        if !self.channel_open.load(Ordering::Acquire) || self.avc.load(Ordering::Acquire) {
+            return SubmitResult::NotReady;
+        }
+        if (width, height) != self.session_size() {
+            debug!(width, height, session = ?self.session_size(), "Dropping frame for a stale size");
+            return SubmitResult::NotReady;
+        }
+        let (w, h) = (usize::from(width), usize::from(height));
+        let row = w * 4;
+        if w == 0 || h == 0 || stride < row || data.len() < stride * (h - 1) + row {
+            warn!(
+                width,
+                height,
+                stride,
+                len = data.len(),
+                "Raw frame has a bad layout"
+            );
+            return SubmitResult::NotReady;
+        }
+
+        let mut inner = self.lock();
+        let (Some(handle), Some(sender)) = (inner.handle.clone(), inner.sender.clone()) else {
+            return SubmitResult::NotReady;
+        };
+        if inner.surface.is_none() {
+            inner.shown.clear();
+        }
+        let full = inner.shown.len() != row * h;
+
+        // Encode changed tiles before taking the pipeline lock (encoding is the slow part).
+        let mut tiles = Vec::new();
+        let mut bytes = 0usize;
+        let mut tile_buf = Vec::with_capacity(TILE * 2 * TILE * 2 * 4);
+        for &(ty, th) in &tile_spans(h) {
+            for &(tx, tw) in &tile_spans(w) {
+                let changed = full
+                    || (ty..ty + th).any(|y| {
+                        let src = &data[y * stride + tx * 4..y * stride + (tx + tw) * 4];
+                        src != &inner.shown[y * row + tx * 4..y * row + (tx + tw) * 4]
+                    });
+                if !changed {
+                    continue;
+                }
+                tile_buf.clear();
+                for y in ty..ty + th {
+                    tile_buf
+                        .extend_from_slice(&data[y * stride + tx * 4..y * stride + (tx + tw) * 4]);
+                }
+                // Tile sizes are bounded by the u16 session size.
+                let bitmap_data = inner.clear.encode(&tile_buf, tw as u16, th as u16);
+                bytes += bitmap_data.len();
+                tiles.push(MixedTilePayload::ClearCodec {
+                    destination: ExclusiveRectangle {
+                        left: tx as u16,
+                        top: ty as u16,
+                        right: (tx + tw) as u16,
+                        bottom: (ty + th) as u16,
+                    },
+                    bitmap_data,
+                });
+            }
+        }
+        if tiles.is_empty() {
+            return SubmitResult::Sent;
+        }
+        // ClearCodec streams carry a sequence number the client checks for continuity. The
+        // encoder bumps its own counter even for frames we end up dropping, so we number the
+        // streams ourselves and only commit the counter once the frame is queued.
+        let mut seq = inner.clear_seq;
+        for tile in &mut tiles {
+            if let MixedTilePayload::ClearCodec { bitmap_data, .. } = tile {
+                bitmap_data[1] = seq;
+                seq = seq.wrapping_add(1);
+            }
+        }
+
+        let timestamp_ms = u32::try_from(inner.started.elapsed().as_millis()).unwrap_or(u32::MAX);
+        let (frame_id, channel_id, messages) = {
+            let mut gfx = handle.lock().unwrap_or_else(|e| e.into_inner());
+            if !gfx.is_ready() || gfx.should_backpressure() {
+                return SubmitResult::NotReady;
+            }
+            // No surface yet implies `full` (`shown` was cleared above under the same lock).
+            let Some(surface) = Self::ensure_surface(&mut inner, &mut gfx, width, height) else {
+                return SubmitResult::NotReady;
+            };
+            let frame_id = gfx.send_mixed_frame(surface, tiles, timestamp_ms);
+            (frame_id, gfx.channel_id(), gfx.drain_output())
+        };
+        if let Some(frame_id) = frame_id {
+            self.record_send(frame_id);
+        }
+        Self::post(&sender, channel_id, messages);
+
+        if frame_id.is_some() {
+            inner.clear_seq = seq;
+            if full {
+                inner.shown = vec![0; row * h];
+            }
+            for y in 0..h {
+                inner.shown[y * row..(y + 1) * row]
+                    .copy_from_slice(&data[y * stride..y * stride + row]);
+            }
             inner.frames_sent += 1;
-            inner.bytes_sent += data.len() as u64;
+            inner.bytes_sent += bytes as u64;
             SubmitResult::Sent
         } else {
-            inner.need_keyframe = true;
             inner.frames_dropped += 1;
-            SubmitResult::NeedKeyframe
+            SubmitResult::NotReady
         }
     }
 }
