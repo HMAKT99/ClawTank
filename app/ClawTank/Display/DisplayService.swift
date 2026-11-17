@@ -73,7 +73,7 @@ final class DisplayService {
                 if await existing.resize(widthPixels: width, heightPixels: height, hiDPI: hiDPI) {
                     return target(for: existing)
                 }
-                release()  // couldn't resize in place: recreate below
+                release(force: true)  // couldn't resize in place: recreate below
             }
             do {
                 let display = try await provider.create(widthPixels: width, heightPixels: height, hiDPI: hiDPI)
@@ -83,7 +83,7 @@ final class DisplayService {
                 log.error("Virtual display failed (\(String(describing: error), privacy: .public)); using physical")
             }
         } else {
-            release()
+            release(force: true)
         }
         guard let main = physical.first(where: { $0 == CGMainDisplayID() }) ?? physical.first else {
             log.error("No display to capture")
@@ -93,7 +93,14 @@ final class DisplayService {
     }
 
     /// Removes the virtual display, if any (session ended).
-    func release() {
+    /// When not forced and no physical displays are online (e.g. clamshell or headless Mac),
+    /// keeping the virtual display alive prevents WindowServer from losing all displays
+    /// and immediately falling into clamshell/display sleep upon client disconnect.
+    func release(force: Bool = false) {
+        if !force && physicalDisplays().isEmpty {
+            log.notice("Headless/clamshell mode: keeping virtual display alive across sessions")
+            return
+        }
         virtualDisplay?.invalidate()
         virtualDisplay = nil
     }

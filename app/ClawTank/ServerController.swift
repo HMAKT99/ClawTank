@@ -147,7 +147,7 @@ final class ServerController: ObservableObject {
     }
 
     func stop() {
-        endSession()
+        endSession(forceReleaseDisplay: true)
         server?.stop()
         server = nil
         status = .stopped
@@ -272,11 +272,11 @@ final class ServerController: ObservableObject {
         }
     }
 
-    private func endSession() {
+    private func endSession(forceReleaseDisplay: Bool = false) {
         media?.stop()
         media = nil
         stopInput()
-        stopVideo(releaseDisplay: true)
+        stopVideo(releaseDisplay: true, forceReleaseDisplay: forceReleaseDisplay)
         power.end()
         session = nil
     }
@@ -363,11 +363,11 @@ extension ServerController {
     }
 
     /// Stops video; with `releaseDisplay` also removes the virtual display (session over).
-    private func stopVideo(releaseDisplay: Bool = false) {
+    private func stopVideo(releaseDisplay: Bool = false, forceReleaseDisplay: Bool = false) {
         enqueueVideo { [self] in
             await stopCurrentVideo()
             if releaseDisplay {
-                displays.release()
+                displays.release(force: forceReleaseDisplay)
                 displayDescription = nil
             }
         }

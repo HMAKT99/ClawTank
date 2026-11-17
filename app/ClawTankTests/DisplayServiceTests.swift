@@ -77,6 +77,17 @@ final class DisplayServiceTests: XCTestCase {
         XCTAssertTrue(display.invalidated)
     }
 
+    func testReleasePreservesVirtualDisplayWhenHeadlessUnlessForced() async throws {
+        let provider = FakeProvider()
+        let service = makeService(physical: [], provider: provider)
+        _ = await service.prepare(width: 1920, height: 1080, scalePercent: 100, mode: .virtual)
+        let display = try XCTUnwrap(provider.created.first)
+        service.release(force: false)
+        XCTAssertFalse(display.invalidated, "Virtual display kept alive when headless")
+        service.release(force: true)
+        XCTAssertTrue(display.invalidated, "Force release invalidates display")
+    }
+
     func testRecreatesWhenResizeInPlaceFails() async throws {
         let provider = FakeProvider()
         let service = makeService(physical: [7], provider: provider)
