@@ -17,7 +17,7 @@ final class PowerAssertions: PowerManaging {
 
     func begin(reason: String) -> Bool {
         guard assertions.isEmpty else { return true }
-        for type in [kIOPMAssertPreventUserIdleSystemSleep, kIOPMAssertPreventUserIdleDisplaySleep] {
+        for type in [kIOPMAssertPreventUserIdleSystemSleep, kIOPMAssertPreventUserIdleDisplaySleep, kIOPMAssertionTypePreventSystemSleep] {
             var id = IOPMAssertionID(0)
             if IOPMAssertionCreateWithName(type as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
                                            reason as CFString, &id) == kIOReturnSuccess {
