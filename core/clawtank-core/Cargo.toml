@@ -19,6 +19,7 @@ ironrdp-core = "=0.2.1"
 ironrdp-displaycontrol = "=0.8.0"
 ironrdp-dvc = "=0.8.0"
 ironrdp-egfx = "=0.3.0"
+ironrdp-graphics = "=0.9.0" # ClearCodec encoder for clients without AVC (video.rs)
 ironrdp-pdu = "=0.9.0"
 ironrdp-rdpsnd = "=0.9.0"
 ironrdp-svc = "=0.8.0"

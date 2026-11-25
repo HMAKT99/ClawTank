@@ -90,6 +90,7 @@ typedef enum {
   CT_EVENT_KIND_ERROR = 6,
   /**
    * Client graphics pipeline ready: start capture + encode. Detail: `"WIDTHxHEIGHT"`.
+   * Check `ct_server_video_codec` to know whether to submit H.264 or raw BGRA.
    */
   CT_EVENT_KIND_VIDEO_START = 7,
   /**
@@ -195,6 +196,21 @@ typedef enum {
    */
   CT_SUBMIT_RESULT_NEED_KEYFRAME = 2,
 } CtSubmitResult;
+
+/**
+ * How video must be submitted for the current session (`ct_server_video_codec`).
+ */
+typedef enum {
+  /**
+   * H.264 with `ct_server_submit_h264`.
+   */
+  CT_VIDEO_CODEC_H264 = 0,
+  /**
+   * Raw BGRA frames with `ct_server_submit_bgra`: the client negotiated the graphics
+   * pipeline without AVC (Windows App on Android/iOS).
+   */
+  CT_VIDEO_CODEC_RAW = 1,
+} CtVideoCodec;
 
 /**
  * Opaque running server.
@@ -414,6 +430,26 @@ CtSubmitResult ct_server_submit_h264(const CtServer *server,
                                      uint16_t height);
 
 /**
+ * Submits one raw frame for a session whose `ct_server_video_codec` is `Raw`: 32-bit BGRA
+ * (alpha ignored), rows top-down and `stride` bytes apart; the top-left `width`×`height`
+ * pixels (the session size) are read. Only changed areas are sent. Returns `NotReady` when
+ * the frame was not sent (no session, H.264 session, stale size, backpressure); the next
+ * frame is diffed against what the client actually shows, so no keyframe is ever owed.
+ * The pixels are read before returning. Thread-safe; never blocks on the network.
+ * Must not be called from inside the event callback.
+ *
+ * # Safety
+ * `server` must be a live pointer from `ct_server_start`; `data` must point to `len`
+ * readable bytes.
+ */
+CtSubmitResult ct_server_submit_bgra(const CtServer *server,
+                                     const uint8_t *data,
+                                     size_t len,
+                                     uint16_t width,
+                                     uint16_t height,
+                                     size_t stride);
+
+/**
  * Sets the client-side cursor shape: 32 bpp **BGRA, straight alpha, rows bottom-up**,
  * at most 96×96, hotspot inside. Returns false for invalid input. Sessions starting later
  * receive the latest shape.
@@ -557,6 +593,15 @@ void ct_server_hide_pointer(const CtServer *server);
  * `server` must be null or a live pointer from `ct_server_start`.
  */
 bool ct_server_video_can_accept(const CtServer *server);
+
+/**
+ * How the host must submit video for the current session; valid from `VideoStart` on.
+ * `H264` for a null server.
+ *
+ * # Safety
+ * `server` must be null or a live pointer from `ct_server_start`.
+ */
+CtVideoCodec ct_server_video_codec(const CtServer *server);
 
 /**
  * Video counters for the current session (zeros for a null server).

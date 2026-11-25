@@ -19,8 +19,13 @@ use ironrdp_displaycontrol::client::DisplayControlClient;
 use ironrdp_dvc::DrdynvcClient;
 use ironrdp_egfx::client::{GraphicsPipelineClient, GraphicsPipelineHandler};
 use ironrdp_egfx::decode::{DecodedFrame, DecoderResult, H264Decoder};
+use ironrdp_egfx::pdu::{
+    CapabilitiesV8Flags, CapabilitiesV81Flags, CapabilitiesV107Flags, CapabilitySet, Codec1Type,
+    GfxPdu,
+};
 use ironrdp_graphics::image_processing::PixelFormat;
 use ironrdp_pdu::gcc::KeyboardType;
+use ironrdp_pdu::geometry::ExclusiveRectangle;
 use ironrdp_pdu::rdp::capability_sets::MajorPlatformType;
 use ironrdp_pdu::rdp::client_info::{PerformanceFlags, TimezoneInfo};
 use ironrdp_session::image::DecodedImage;
@@ -90,6 +95,9 @@ pub fn client_config_with(
     }
 }
 
+/// A ClearCodec update: destination rectangle and bitmap stream.
+pub type ClearTile = (ExclusiveRectangle, Vec<u8>);
+
 /// What the EGFX side of the client observed. Cheap to clone; shared with the channel.
 #[derive(Clone, Default)]
 pub struct EgfxRecorder {
@@ -100,6 +108,13 @@ pub struct EgfxRecorder {
     pub frames: Arc<AtomicU64>,
     /// Size from the last ResetGraphics.
     pub reset_size: Arc<Mutex<Option<(u32, u32)>>>,
+    /// Capability sets to advertise instead of IronRDP's default (e.g. with `AVC_DISABLED`,
+    /// like the Windows App on Android/iOS).
+    pub advertise: Option<Vec<CapabilitySet>>,
+    /// Capability set the server confirmed.
+    pub confirmed: Arc<Mutex<Option<CapabilitySet>>>,
+    /// ClearCodec `WireToSurface1` payloads received (destination, bitmap stream).
+    pub clear_tiles: Arc<Mutex<Vec<ClearTile>>>,
 }
 
 impl EgfxRecorder {
@@ -115,6 +130,40 @@ impl EgfxRecorder {
 struct RecordingHandler(EgfxRecorder);
 
 impl GraphicsPipelineHandler for RecordingHandler {
+    fn capabilities(&self) -> Vec<CapabilitySet> {
+        self.0.advertise.clone().unwrap_or_else(|| {
+            // IronRDP's default.
+            vec![
+                CapabilitySet::V10_7 {
+                    flags: CapabilitiesV107Flags::SMALL_CACHE,
+                },
+                CapabilitySet::V8_1 {
+                    flags: CapabilitiesV81Flags::AVC420_ENABLED | CapabilitiesV81Flags::SMALL_CACHE,
+                },
+                CapabilitySet::V8 {
+                    flags: CapabilitiesV8Flags::SMALL_CACHE,
+                },
+            ]
+        })
+    }
+
+    fn on_capabilities_confirmed(&mut self, caps: &CapabilitySet) {
+        *self.0.confirmed.lock().unwrap() = Some(caps.clone());
+    }
+
+    fn on_unhandled_pdu(&mut self, pdu: &GfxPdu) {
+        // The IronRDP client doesn't decode ClearCodec; keep the streams for the test.
+        if let GfxPdu::WireToSurface1(wire) = pdu
+            && wire.codec_id == Codec1Type::ClearCodec
+        {
+            self.0
+                .clear_tiles
+                .lock()
+                .unwrap()
+                .push((wire.destination_rectangle.clone(), wire.bitmap_data.clone()));
+        }
+    }
+
     fn on_reset_graphics(&mut self, width: u32, height: u32) {
         *self.0.reset_size.lock().unwrap() = Some((width, height));
     }

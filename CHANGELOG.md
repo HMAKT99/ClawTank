@@ -4,6 +4,9 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed
+- Windows App / Microsoft Remote Desktop on **Android and iOS/iPadOS** disconnected with "protocol error" right after login ([HMAKT99/ClawTank#10](https://github.com/HMAKT99/ClawTank/issues/10)). These clients advertise the graphics pipeline with `AVC_DISABLED` (no H.264 decoder); IronRDP's negotiation dropped the flag, so ClawTank confirmed AVC and sent H.264. The flag is now kept, and such clients get a lossless raw-frame path instead: BGRA capture, changed 64×64 tiles only, sent as ClearCodec (ADR-025). Desktop clients still get H.264, unchanged.
+
 ### MCP
 - The MCP server is packaged as an MCP Bundle (`clawtank-mcp-<version>-arm64.mcpb`) for one-click install in Claude Desktop, and listed in the MCP Registry as `io.github.HMAKT99/clawtank` (`server.json`). `make release` builds both.
 - OpenClaw skill `clawtank-mac` on ClawHub (`packaging/openclaw/clawtank-mac/SKILL.md`): screenshots, input, apps and virtual displays through the Agent API.
