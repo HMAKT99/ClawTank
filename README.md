@@ -5,6 +5,7 @@
 [![CI](https://github.com/HMAKT99/ClawTank/actions/workflows/ci.yml/badge.svg)](https://github.com/HMAKT99/ClawTank/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/HMAKT99/ClawTank?include_prereleases&label=release)](https://github.com/HMAKT99/ClawTank/releases)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![HMAKT99/ClawTank MCP server](https://glama.ai/mcp/servers/HMAKT99/ClawTank/badges/score.svg)](https://glama.ai/mcp/servers/HMAKT99/ClawTank)
 ![Platform: macOS 14+ on Apple silicon](https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20Apple%20silicon-lightgrey)
 
 [Install](#install) · [Connect](#connect) · [FAQ](#faq) · [Troubleshooting](#troubleshooting) · [Documentation](docs/README.md) · [Help test the beta](#help-test-the-beta)
